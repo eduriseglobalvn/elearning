@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --erg-blue: #00008b;
+    --erg-red: #cc0022;
+    --erg-bg: #f8fafc;
+    --erg-surface: #ffffff;
+    --erg-surface-soft: #f1f5f9;
+    --erg-border: #e2e8f0;
+    --erg-text: #0f172a;
+    --erg-muted: #64748b;
+    --erg-shadow: 0 30px 60px rgba(15, 23, 42, 0.08);
+    --erg-shadow-lg: 0 30px 90px -20px rgba(15, 23, 42, 0.24);
+  }
+
+  ::selection {
+    background: rgb(0 0 139 / 12%);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply m-0 antialiased;
+    background:
+      radial-gradient(circle at top left, rgb(0 0 139 / 0.05), transparent 28%),
+      radial-gradient(circle at bottom right, rgb(204 0 34 / 0.04), transparent 24%),
+      var(--erg-bg);
+    color: var(--erg-text);
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  a {
+    @apply no-underline text-inherit;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    @apply border-0 bg-transparent p-0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(100 116 139 / 0.28);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(100 116 139 / 0.42);
+  }
+}

@@ -17,10 +17,11 @@ export function MultipleResponseQuestion({
           const selected = selectedIds.has(choice.id);
           const showCorrect = reviewMode && choice.correct;
           const showWrong = reviewMode && selected && !choice.correct;
+          const showStatus = reviewMode && (showCorrect || showWrong);
           const containerStyle = showCorrect
-            ? { backgroundColor: "#ecfdf5", borderColor: "#86efac" }
+            ? { backgroundColor: "rgba(255,255,255,0.9)", borderColor: "transparent" }
             : showWrong
-              ? { backgroundColor: "#fff1f2", borderColor: "#fda4af" }
+              ? { backgroundColor: "rgba(255,255,255,0.9)", borderColor: "transparent" }
               : selected
                 ? { backgroundColor: "var(--quiz-option-selected-bg)" }
                 : undefined;
@@ -29,7 +30,7 @@ export function MultipleResponseQuestion({
               key={choice.id}
               type="button"
               disabled={submitted}
-              className="flex w-full items-start gap-4 rounded-xl border border-transparent px-3 py-3 text-left transition hover:bg-slate-200/20"
+              className="grid w-full grid-cols-[40px_36px_minmax(0,1fr)] items-start gap-3 rounded-xl border border-transparent px-2 py-3 text-left transition hover:bg-slate-200/20"
               style={containerStyle}
               onClick={() => {
                 if (submitted) return;
@@ -39,18 +40,24 @@ export function MultipleResponseQuestion({
                 onChange({ choiceIds: [...next] });
               }}
             >
+              <ReviewStatusIcon correct={showCorrect} visible={showStatus} />
               <span
-                className="mt-1 inline-flex h-8 w-8 flex-none items-center justify-center rounded-md border-2 bg-white"
-                style={{ borderColor: showCorrect ? "#22c55e" : showWrong ? "#ef4444" : "var(--quiz-canvas-border)" }}
+                className="mt-1 inline-flex h-7 w-7 flex-none items-center justify-center rounded-md border-2 bg-white"
+                style={{
+                  borderColor: showCorrect ? "#78b816" : showWrong ? "#ff8b3d" : selected ? "var(--quiz-accent-start)" : "#cfd8df",
+                }}
               >
                 {selected || showCorrect ? (
                   <span
-                    className="h-3.5 w-3.5 rounded-[3px]"
-                    style={{ backgroundColor: showCorrect ? "#22c55e" : showWrong ? "#ef4444" : "var(--quiz-accent-start)" }}
+                    className="h-3 w-3 rounded-[3px]"
+                    style={{ backgroundColor: showCorrect ? "#78b816" : showWrong ? "#ff8b3d" : "var(--quiz-accent-start)" }}
                   />
                 ) : null}
               </span>
-              <span className="text-xl leading-[1.5] sm:text-2xl" style={{ color: "var(--quiz-option-text)" }}>
+              <span
+                className="text-xl leading-[1.5] sm:text-2xl"
+                style={{ color: showCorrect ? "#006d93" : showWrong ? "#ff8b3d" : reviewMode ? "#8fbfd3" : "var(--quiz-option-text)" }}
+              >
                 {choice.label}
               </span>
             </button>
@@ -59,5 +66,20 @@ export function MultipleResponseQuestion({
       </div>
       {question.contentImage ? <QuestionContentImage question={question} className="lg:sticky lg:top-0" /> : null}
     </div>
+  );
+}
+
+function ReviewStatusIcon({ correct, visible }: { correct: boolean; visible: boolean }) {
+  if (!visible) {
+    return <span className="mt-0.5 h-8 w-8" />;
+  }
+
+  return (
+    <span
+      className="mt-0.5 grid h-8 w-8 place-items-center rounded-full text-lg font-black text-white"
+      style={{ backgroundColor: correct ? "#78b816" : "#e65a4d" }}
+    >
+      {correct ? "✓" : "×"}
+    </span>
   );
 }

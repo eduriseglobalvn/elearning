@@ -1,4 +1,4 @@
-import type { AnswerPayload, Question } from "@/lib/types";
+import type { AnswerPayload, AnswerResult, Question } from "@/lib/types";
 
 export type QuestionComponentProps = {
   question: Question;
@@ -6,4 +6,5 @@ export type QuestionComponentProps = {
   onChange: (next: AnswerPayload) => void;
   submitted?: boolean;
   reviewMode?: boolean;
+  result?: AnswerResult | null;
 };

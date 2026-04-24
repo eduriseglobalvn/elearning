@@ -114,25 +114,35 @@ export function MatchingQuestion({
             {displayPairs.map((pair, index) => {
               const assignedId = currentOrder[index];
               const assignedPair = assignedId ? pairMap.get(assignedId) ?? null : null;
+              const assignedPairIndex = assignedId ? displayPairs.findIndex((item) => item.id === assignedId) : -1;
               const showReviewCorrect = reviewMode && assignedId === displayPairs[index]?.id;
+              const showReviewWrong = reviewMode && assignedId !== displayPairs[index]?.id;
               const rowConnected = connectedRows.includes(pair.id);
 
               return (
                 <div
                   key={pair.id}
-                  className={`grid items-center gap-3 md:grid-cols-[minmax(0,1fr)_188px] ${rowConnected ? "md:gap-0" : "md:gap-8"}`}
+                  className={`grid items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] ${rowConnected ? "md:gap-0" : "md:gap-8"}`}
                 >
                   <div
-                    className="relative flex min-h-[52px] items-center rounded-lg border-2 bg-white px-4 py-2 pr-8 text-lg leading-[1.35] shadow-sm sm:text-[22px]"
+                    className="relative flex min-h-[56px] min-w-0 items-center rounded-lg border-2 bg-white px-4 py-2 pr-8 text-lg leading-[1.35] shadow-sm sm:text-[22px]"
                     style={{
-                      borderColor: "var(--quiz-canvas-border)",
-                      color: "var(--quiz-option-text)",
+                      borderColor: showReviewCorrect ? "#8ac241" : showReviewWrong ? "#ff8178" : "var(--quiz-canvas-border)",
+                      color: showReviewCorrect ? "#111827" : showReviewWrong ? "#111827" : "var(--quiz-option-text)",
                     }}
                   >
+                    {reviewMode ? (
+                      <span
+                        className="mr-2 text-2xl font-black"
+                        style={{ color: showReviewCorrect ? "#78b816" : "#e65a4d" }}
+                      >
+                        {index + 1}.
+                      </span>
+                    ) : null}
                     <span>{pair.leftText}</span>
                     <span
                       className="pointer-events-none absolute right-[-2px] top-1/2 z-[3] h-7 w-[18px] -translate-y-1/2 rounded-l-full border-2 border-r-0 bg-white"
-                      style={{ borderColor: "var(--quiz-canvas-border)" }}
+                      style={{ borderColor: showReviewCorrect ? "#8ac241" : showReviewWrong ? "#ff8178" : "var(--quiz-canvas-border)" }}
                     />
                   </div>
 
@@ -144,8 +154,10 @@ export function MatchingQuestion({
                         label={assignedPair.rightText}
                         disabled={submitted}
                         correct={showReviewCorrect}
+                        incorrect={showReviewWrong}
                         active={activeId === assignedPair.id}
                         connected={rowConnected}
+                        reviewIndex={assignedPairIndex >= 0 ? assignedPairIndex + 1 : undefined}
                       />
                     ) : null}
                   </MatchingRowTarget>
@@ -173,7 +185,7 @@ function MatchingRowTarget({
   return (
     <div
       ref={setNodeRef}
-      className={`flex min-h-[52px] items-center ${isOver ? "rounded-lg ring-2 ring-offset-2" : ""}`}
+      className={`flex min-h-[56px] w-full min-w-0 items-stretch ${isOver ? "rounded-lg ring-2 ring-offset-2" : ""}`}
       style={isOver ? { backgroundColor: "var(--quiz-option-selected-bg)", ["--tw-ring-color" as string]: "rgba(59, 130, 246, 0.24)" } : undefined}
     >
       {children}
@@ -187,16 +199,20 @@ function DraggableMatchingChip({
   label,
   disabled,
   correct,
+  incorrect,
   active,
   connected,
+  reviewIndex,
 }: {
   id: string;
   rowId: string;
   label: string;
   disabled: boolean;
   correct?: boolean;
+  incorrect?: boolean;
   active: boolean;
   connected: boolean;
+  reviewIndex?: number;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id,
@@ -209,6 +225,7 @@ function DraggableMatchingChip({
   return (
     <div
       ref={setNodeRef}
+      className="w-full min-w-0"
       style={{
         transform: CSS.Translate.toString(transform),
       }}
@@ -218,8 +235,10 @@ function DraggableMatchingChip({
         dragging={isDragging}
         locked={disabled}
         correct={correct}
+        incorrect={incorrect}
         active={active}
         connected={connected}
+        reviewIndex={reviewIndex}
         dragProps={{
           ...(attributes as ButtonHTMLAttributes<HTMLButtonElement>),
           ...(listeners as ButtonHTMLAttributes<HTMLButtonElement>),
@@ -235,8 +254,10 @@ function MatchingChip({
   overlay = false,
   locked = false,
   correct = false,
+  incorrect = false,
   active = false,
   connected = false,
+  reviewIndex,
   dragProps,
 }: {
   label: string;
@@ -244,30 +265,48 @@ function MatchingChip({
   overlay?: boolean;
   locked?: boolean;
   correct?: boolean;
+  incorrect?: boolean;
   active?: boolean;
   connected?: boolean;
+  reviewIndex?: number;
   dragProps?: ButtonHTMLAttributes<HTMLButtonElement>;
 }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex min-h-[52px] w-full items-center justify-between gap-2 rounded-r-lg border-2 px-3 pl-6 text-left text-lg leading-[1.35] shadow-sm transition md:w-[188px] sm:text-[22px] ${
+      className={`relative inline-flex min-h-[56px] w-full min-w-0 items-center justify-between gap-3 rounded-r-lg border-2 px-4 pl-7 text-left text-lg leading-[1.35] shadow-sm transition sm:text-[22px] ${
         overlay || active
           ? "border-[#c6b66a] bg-[#fff0a8] shadow-[0_10px_26px_rgba(98,89,34,0.22)]"
           : correct
             ? "border-[#8fb37f] bg-[#f4fff0]"
+            : incorrect
+              ? "border-[#ff8178] bg-[#fff7f6]"
             : "border-slate-300 bg-white"
       } ${connected ? "md:-ml-[2px] md:border-l-0" : ""} ${dragging ? "opacity-15" : ""} ${locked ? "cursor-default" : "cursor-grab"}`}
-      style={!overlay && !active && !correct ? { borderColor: "var(--quiz-canvas-border)", backgroundColor: "var(--quiz-input-bg)", color: "var(--quiz-option-text)" } : undefined}
+      style={!overlay && !active && !correct && !incorrect ? { borderColor: "var(--quiz-canvas-border)", backgroundColor: "var(--quiz-input-bg)", color: "var(--quiz-option-text)" } : undefined}
       {...dragProps}
     >
       <span
         className={`pointer-events-none absolute left-[-18px] top-1/2 z-[4] h-7 w-[18px] -translate-y-1/2 rounded-l-full border-2 border-r-0 ${
-          overlay || active ? "border-[#c6b66a] bg-[#fff0a8]" : correct ? "border-[#8fb37f] bg-[#f4fff0]" : "border-slate-300 bg-white"
+          overlay || active
+            ? "border-[#c6b66a] bg-[#fff0a8]"
+            : correct
+              ? "border-[#8fb37f] bg-[#f4fff0]"
+              : incorrect
+                ? "border-[#ff8178] bg-[#fff7f6]"
+                : "border-slate-300 bg-white"
         }`}
-        style={!overlay && !active && !correct ? { borderColor: "var(--quiz-canvas-border)", backgroundColor: "var(--quiz-input-bg)" } : undefined}
+        style={!overlay && !active && !correct && !incorrect ? { borderColor: "var(--quiz-canvas-border)", backgroundColor: "var(--quiz-input-bg)" } : undefined}
       />
-      <span className="whitespace-nowrap">{label}</span>
+      {reviewIndex ? (
+        <span
+          className="font-black"
+          style={{ color: correct ? "#78b816" : incorrect ? "#e65a4d" : "currentColor" }}
+        >
+          {reviewIndex}.
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 whitespace-normal break-words">{label}</span>
       {!overlay ? <span aria-hidden="true" className="text-xl tracking-[-0.16em] text-slate-500">⋮⋮</span> : null}
     </button>
   );

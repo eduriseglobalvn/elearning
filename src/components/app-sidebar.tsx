@@ -1,18 +1,20 @@
 "use client"
 
 import * as React from "react"
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft"
-import ChevronRightIcon from "@mui/icons-material/ChevronRight"
-import GraphicEqIcon from "@mui/icons-material/GraphicEq"
-import MapIcon from "@mui/icons-material/Map"
-import MenuBookIcon from "@mui/icons-material/MenuBook"
-import PieChartIcon from "@mui/icons-material/PieChart"
-import QuizIcon from "@mui/icons-material/Quiz"
-import SchoolIcon from "@mui/icons-material/School"
-import SettingsIcon from "@mui/icons-material/Settings"
-import SmartToyIcon from "@mui/icons-material/SmartToy"
-import TerminalIcon from "@mui/icons-material/Terminal"
 
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  GraphicEqIcon,
+  MapIcon,
+  MenuBookIcon,
+  PieChartIcon,
+  QuizIcon,
+  SchoolIcon,
+  SettingsIcon,
+  SmartToyIcon,
+  TerminalIcon,
+} from "@/components/icons"
 import { NavMain } from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"

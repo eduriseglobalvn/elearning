@@ -8,9 +8,11 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { useI18n, type Locale } from "@/features/i18n";
 import { cn } from "@/utils/cn";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import TranslateIcon from "@mui/icons-material/Translate";
+import {
+  ArrowDownwardIcon,
+  ArrowUpwardIcon,
+  TranslateIcon,
+} from "@/components/icons";
 
 type LocaleSwitcherProps = {
   className?: string;

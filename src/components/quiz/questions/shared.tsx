@@ -45,28 +45,39 @@ export function QuestionContentImage({
 
 export function InlineChoiceSelect({
   blank,
+  correctValue,
+  reviewMode = false,
   submitted,
   value,
   onChange,
+  onRevealCorrectAnswer,
 }: {
   blank: NonNullable<Question["inlineBlanks"]>[number];
+  correctValue?: string;
+  reviewMode?: boolean;
   submitted: boolean;
   value: AnswerPayload;
   onChange: (next: AnswerPayload) => void;
+  onRevealCorrectAnswer?: () => void;
 }) {
   const { t } = useI18n();
+  const selectedValue = value.inlineSelections?.[blank.id] ?? "";
+  const isAnswered = Boolean(selectedValue);
+  const isCorrect = reviewMode && isAnswered && selectedValue === correctValue;
+  const isWrong = reviewMode && isAnswered && selectedValue !== correctValue;
 
   return (
-    <label className="flex-none">
+    <div className="relative flex-none">
       <select
-        className="min-h-13 min-w-[180px] rounded-lg border-2 px-4 text-xl font-bold outline-none"
+        aria-label={blank.statement}
+        className="min-h-13 min-w-[180px] rounded-lg border-2 px-4 pr-10 text-xl font-bold outline-none transition"
         disabled={submitted}
         style={{
-          borderColor: "var(--quiz-canvas-border)",
-          backgroundColor: "var(--quiz-input-bg)",
-          color: "var(--quiz-option-text)",
+          borderColor: isCorrect ? "#78b816" : isWrong ? "#ef6b5f" : "var(--quiz-canvas-border)",
+          backgroundColor: isCorrect ? "#fbfff4" : isWrong ? "#fff8f7" : "var(--quiz-input-bg)",
+          color: isCorrect ? "#66a80f" : isWrong ? "#df4f43" : "var(--quiz-option-text)",
         }}
-        value={value.inlineSelections?.[blank.id] ?? ""}
+        value={selectedValue}
         onChange={(event) =>
           onChange({
             inlineSelections: {
@@ -87,6 +98,16 @@ export function InlineChoiceSelect({
           </option>
         ))}
       </select>
-    </label>
+      {isWrong ? (
+        <button
+          type="button"
+          aria-label="Xem đáp án đúng"
+          className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border-2 border-[#ef6b5f] text-base font-black text-[#df4f43] transition hover:bg-[#fff0ee] focus:outline-none focus:ring-2 focus:ring-[#ef6b5f]/30"
+          onClick={onRevealCorrectAnswer}
+        >
+          ?
+        </button>
+      ) : null}
+    </div>
   );
 }

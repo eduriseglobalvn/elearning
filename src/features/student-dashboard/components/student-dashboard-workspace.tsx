@@ -892,35 +892,58 @@ function RankingBarChart({
   entries: StudentLeaderboardEntry[];
   scoreLabel: string;
 }) {
-  const maxScore = Math.max(...entries.map((entry) => entry.averageScore), 1);
+  const chartMax = 100;
+  const leader = entries[0];
+  const currentStudent = entries.find((entry) => entry.isCurrentStudent);
+  const gapToLeader =
+    leader && currentStudent && leader.id !== currentStudent.id
+      ? Math.max(0, leader.averageScore - currentStudent.averageScore)
+      : 0;
 
   return (
-    <div className="rounded-lg bg-slate-50 p-4">
-      <div className="flex h-56 items-end gap-3 border-b border-slate-200 pb-3">
-        {entries.map((entry, index) => {
-          const height = Math.max(18, Math.round((entry.averageScore / maxScore) * 100));
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div>
+        <h3 className="text-base font-semibold text-slate-950">Bar Chart - Label</h3>
+        <p className="mt-1 text-sm text-slate-500">Điểm trung bình hiện tại</p>
+      </div>
+
+      <div className="relative mt-8 h-[245px]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-slate-100" />
+        <div className="pointer-events-none absolute inset-x-0 top-1/3 h-px bg-slate-100" />
+        <div className="pointer-events-none absolute inset-x-0 top-2/3 h-px bg-slate-100" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-8 h-px bg-slate-100" />
+
+        <div
+          className="relative z-[1] grid h-full items-end gap-4 px-1"
+          style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}
+        >
+          {entries.map((entry) => {
+            const height = Math.max(28, Math.round((entry.averageScore / chartMax) * 178));
+
           return (
-            <div key={entry.id} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="text-sm font-semibold text-[var(--erg-blue)]">{entry.averageScore}</div>
+              <div key={entry.id} className="flex min-w-0 flex-col items-center">
+                <div className="mb-2 text-sm font-medium text-slate-950">{entry.averageScore}</div>
               <div
                 className={cn(
-                  "w-full max-w-14 rounded-t-md",
-                  entry.isCurrentStudent ? "bg-[var(--erg-red)]" : index === 0 ? "bg-amber-500" : "bg-[var(--erg-blue)]",
+                    "w-full max-w-[56px] rounded-md bg-[#93c5fd] transition hover:bg-[#7db7fb]",
+                    entry.isCurrentStudent && "ring-2 ring-[var(--erg-blue)] ring-offset-2",
                 )}
-                style={{ height: `${height}%` }}
+                  style={{ height }}
+                  title={`${entry.name}: ${entry.averageScore} ${scoreLabel}`}
               />
+                <div className="mt-4 w-full truncate text-center text-sm text-slate-600" title={entry.name}>
+                  {shortName(entry.name)}
+                </div>
             </div>
           );
         })}
+        </div>
       </div>
-      <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}>
-        {entries.map((entry) => (
-          <div key={entry.id} className="truncate text-center text-xs font-semibold text-slate-600" title={entry.name}>
-            {shortName(entry.name)}
-          </div>
-        ))}
+
+      <div className="mt-5 text-sm font-semibold text-slate-950">
+        {gapToLeader > 0 ? `Bạn còn cách top ${gapToLeader} điểm` : "Bạn đang giữ vị trí dẫn đầu"} ↗
       </div>
-      <div className="mt-3 text-center text-xs font-semibold uppercase text-slate-400">{scoreLabel}</div>
+      <p className="mt-2 text-sm text-slate-500">Showing average score for current leaderboard</p>
     </div>
   );
 }

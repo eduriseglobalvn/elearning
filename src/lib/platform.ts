@@ -16,7 +16,13 @@ export function shouldUseHashRouter() {
 }
 
 export function getApiBase() {
-  return import.meta.env.VITE_API_BASE ?? "http://localhost:8080/api/v1";
+  return import.meta.env.VITE_API_BASE?.trim() ?? "";
+}
+
+export function getGradingStrategy() {
+  return import.meta.env.VITE_GRADING_STRATEGY?.trim() === "server-authoritative"
+    ? "server-authoritative"
+    : "client-first";
 }
 
 declare global {

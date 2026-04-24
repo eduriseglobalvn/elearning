@@ -17,10 +17,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward"
-import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined"
-import FolderIcon from "@mui/icons-material/Folder"
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz"
+import {
+  ArrowForwardIcon,
+  DeleteOutlinedIcon,
+  FolderIcon,
+  MoreHorizIcon,
+} from "@/components/icons"
 
 export function NavProjects({
   projects,

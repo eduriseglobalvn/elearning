@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import CloseIcon from "@mui/icons-material/Close"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
+import { CloseIcon } from "@/components/icons"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 

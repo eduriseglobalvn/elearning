@@ -4,7 +4,7 @@ import { QuizThemeSurface } from "@/components/quiz/quiz-theme-surface";
 import { QuestionRenderer } from "@/components/quiz/question-renderer";
 import { createAttempt, fetchQuiz, submitAnswer, submitAttempt } from "@/lib/api";
 import { createInitialAnswer, getAllQuestions, isAnswerComplete, normalizeAnswerForSubmission } from "@/lib/quiz";
-import type { AnswerPayload, Attempt, Question, Quiz, QuizResultDisplay } from "@/lib/types";
+import type { AnswerPayload, AnswerResult, Attempt, Question, Quiz, QuizResultDisplay } from "@/lib/types";
 
 type LoadState =
   | { status: "loading" }
@@ -68,7 +68,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
     async function load() {
       try {
         const quiz = await fetchQuiz(quizId);
-        const attempt = await createAttempt(quiz.id);
+        const attempt = await createAttempt(quiz);
         setLoadState({ status: "ready", quiz, attempt });
       } catch (error) {
         setLoadState({
@@ -109,6 +109,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   const isTrainingMode = activeQuiz?.settings.mode === "training";
   const isTestingMode = activeQuiz?.settings.mode === "testing";
   const attemptCompleted = Boolean(activeAttempt && activeAttempt.submittedCount === questions.length && questions.length > 0);
+  const reviewingAttempt = attemptCompleted && reviewingSubmittedAttempt;
   const currentRecord = activeQuestion && activeAttempt ? activeAttempt.answers[activeQuestion.id] : undefined;
   const submitted = Boolean(currentRecord);
   const storedAnswer = activeQuestion ? currentRecord?.input ?? drafts[activeQuestion.id] : undefined;
@@ -167,6 +168,8 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
         );
         const nextAttempt = await submitAttempt(activeAttempt.id, activeQuiz, answerMap);
         setLoadState({ status: "ready", quiz: activeQuiz, attempt: nextAttempt });
+        setReviewingSubmittedAttempt(true);
+        setCurrentIndex(0);
       } finally {
         setSubmitting(false);
       }
@@ -264,7 +267,6 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
   async function handleFinalizeAttempt() {
     setSubmitDialogMode(null);
-    setReviewingSubmittedAttempt(false);
     setSubmitting(true);
     try {
       const answerMap = Object.fromEntries(
@@ -275,6 +277,8 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
       );
       const nextAttempt = await submitAttempt(readyAttempt.id, readyQuiz, answerMap);
       setLoadState({ status: "ready", quiz: readyQuiz, attempt: nextAttempt });
+      setReviewingSubmittedAttempt(true);
+      setCurrentIndex(0);
     } finally {
       setSubmitting(false);
     }
@@ -287,6 +291,20 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   function handleReviewQuiz() {
     setReviewingSubmittedAttempt(true);
     setCurrentIndex(0);
+  }
+
+  function handleDraftChange(next: AnswerPayload) {
+    setDrafts((current) => {
+      const previous = current[readyQuestion.id];
+      if (areAnswerPayloadsEqual(previous, next)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [readyQuestion.id]: next,
+      };
+    });
   }
 
   function handleJumpToQuestion(index: number) {
@@ -595,30 +613,15 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
             <QuestionRenderer
               question={readyQuestion}
               value={draftAnswer}
-              onChange={(next) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [readyQuestion.id]: next,
-                }))
-              }
+              onChange={handleDraftChange}
               submitted={submitted}
               reviewMode={submitted}
+              result={lastResult}
             />
 
-            {lastResult ? (
-              <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-[0_12px_26px_rgba(26,44,64,0.09)]">
-                <div
-                  className={`flex items-center justify-between px-4 py-3 text-sm font-black text-white ${lastResult.correct ? "bg-emerald-600" : ""}`}
-                  style={!lastResult.correct ? { background: "linear-gradient(135deg, var(--quiz-accent-start), var(--quiz-accent-end))" } : undefined}
-                >
-                  <span>{lastResult.correct ? "Đúng rồi" : "Chưa đúng"}</span>
-                  <span>{submitted ? "Đã chấm điểm" : ""}</span>
-                </div>
-                <div className="px-4 py-4 text-base text-slate-500">{lastResult.message}</div>
-              </div>
-            ) : null}
+            {lastResult ? <QuestionFeedbackPanel result={lastResult} /> : null}
 
-            {submitted ? <AnswerKeyCard question={readyQuestion} /> : null}
+            {submitted && readyQuestion.kind === "hotspot" ? <AnswerKeyCard question={readyQuestion} /> : null}
 
             {isTrainingMode && submitted && !isLastQuestion ? (
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-bold text-slate-500 shadow-[0_8px_20px_rgba(26,44,64,0.08)]">
@@ -642,7 +645,9 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
             <span className="text-sm font-bold tracking-[0.02em] text-slate-600">
               {isTrainingMode
                 ? "Nhấn Đáp án để xem kết quả và hệ thống tự động sang câu tiếp theo."
-                : allQuestionsAnswered
+                : reviewingAttempt
+                  ? "Đang xem lại kết quả. Màu xanh là đáp án đúng, màu đỏ/cam là câu trả lời cần sửa."
+                  : allQuestionsAnswered
                   ? "Tất cả câu hỏi đã có câu trả lời. Bạn có thể nộp bài."
                   : "Dùng Quay lại / Tiếp theo để rà soát bài trước khi nộp."}
             </span>
@@ -688,7 +693,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                 className={navButtonClass}
                 style={accentButtonStyle}
                 type="button"
-                disabled={isLastQuestion || !currentAnswerComplete || submitting || attemptCompleted}
+                disabled={isLastQuestion || (!reviewingAttempt && !currentAnswerComplete) || submitting}
                 onClick={() => setCurrentIndex((value) => Math.min(questions.length - 1, value + 1))}
               >
                 TIẾP THEO
@@ -780,6 +785,27 @@ function FinalResultScreen({
   );
 }
 
+function QuestionFeedbackPanel({ result }: { result: AnswerResult }) {
+  const tone = result.correct ? "correct" : "wrong";
+  const title = result.correct ? "Đáp án chính xác!" : result.partiallyRight ? "Đáp án gần đúng!" : "Đáp án chưa đúng!";
+  const headerClass =
+    tone === "correct"
+      ? "bg-[#78b816]"
+      : result.partiallyRight
+        ? "bg-[#f59e0b]"
+        : "bg-[#e65a4d]";
+
+  return (
+    <div className="mx-auto mt-8 w-full max-w-[884px] overflow-hidden rounded-lg bg-white shadow-[0_16px_38px_rgba(15,23,42,0.16)]">
+      <div className={`flex min-h-14 items-center justify-between px-7 text-2xl font-black text-white ${headerClass}`}>
+        <span>{title}</span>
+        <span className="text-3xl font-light">⌄</span>
+      </div>
+      <div className="px-7 py-8 text-xl leading-8 text-slate-950">{result.message}</div>
+    </div>
+  );
+}
+
 function SubmitConfirmDialog({
   mode,
   resultDisplay,
@@ -857,19 +883,44 @@ function AnswerKeyCard({ question }: { question: Question }) {
 function getAnswerKeyLines(question: Question): string[] {
   switch (question.kind) {
     case "single_choice":
+    case "true_false":
       return (question.choices ?? []).filter((choice) => choice.correct).map((choice) => `Đáp án đúng: ${choice.label}`);
     case "multiple_response":
       return (question.choices ?? []).filter((choice) => choice.correct).map((choice) => `Đáp án đúng: ${choice.label}`);
+    case "short_answer":
+    case "fill_blank":
+      return (question.textBlanks ?? []).map(
+        (blank, index) => `${index + 1}. ${blank.label}: ${blank.correctAnswers[0] ?? ""}`,
+      );
+    case "numeric":
+      return question.numericAnswer
+        ? [`Đáp án đúng: ${question.numericAnswer.correctValue}${question.numericAnswer.unit ? ` ${question.numericAnswer.unit}` : ""}`]
+        : [];
     case "matching":
       return (question.matching ?? []).map((pair, index) => `${index + 1}. ${pair.prompt} -> ${pair.response}`);
     case "sequence":
       return (question.sequenceItems ?? []).map((item, index) => `${index + 1}. ${item.label}`);
     case "inline_choice":
+    case "select_from_lists":
       return (question.inlineBlanks ?? []).map(
         (blank, index) => `${index + 1}. ${blank.statement}: ${formatInlineOption(blank.correctOptionId)}`,
       );
+    case "drag_words":
+      return (question.wordSlots ?? []).map((slot, index) => {
+        const word = question.wordBank?.find((item) => item.id === slot.correctWordId);
+        return `${index + 1}. ${slot.label}: ${word?.label ?? ""}`;
+      });
     case "hotspot":
       return ["Vùng đáp án đúng đã được hiển thị trên hình."];
+    case "drag_drop":
+      return (question.dragDropItems ?? []).map((item, index) => {
+        const target = question.dropTargets?.find((candidate) => candidate.id === item.correctTargetId);
+        return `${index + 1}. ${item.label} -> ${target?.label ?? ""}`;
+      });
+    case "likert_scale":
+      return ["Câu khảo sát ghi nhận mức độ lựa chọn, không có đáp án đúng sai tuyệt đối."];
+    case "essay":
+      return (question.essayRubric ?? []).map((item) => `${item.label}: ${item.points}đ`);
     default:
       return [];
   }
@@ -887,6 +938,64 @@ function formatInlineOption(option: string) {
   return option;
 }
 
+function areAnswerPayloadsEqual(left?: AnswerPayload, right?: AnswerPayload) {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return (
+    left.choiceId === right.choiceId &&
+    stringArraysEqual(left.choiceIds, right.choiceIds) &&
+    stringArraysEqual(left.matchingOrder, right.matchingOrder) &&
+    stringArraysEqual(left.matchingConnectedRows, right.matchingConnectedRows) &&
+    stringArraysEqual(left.sequenceOrder, right.sequenceOrder) &&
+    recordsEqual(left.matchingAssignments, right.matchingAssignments) &&
+    recordsEqual(left.inlineSelections, right.inlineSelections) &&
+    recordsEqual(left.textResponses, right.textResponses) &&
+    recordsEqual(left.dragWordPlacements, right.dragWordPlacements) &&
+    recordsEqual(left.dragDropPlacements, right.dragDropPlacements) &&
+    recordsEqual(left.likertResponses, right.likertResponses) &&
+    left.numericValue === right.numericValue &&
+    left.essayText === right.essayText &&
+    left.hotspotPoint?.x === right.hotspotPoint?.x &&
+    left.hotspotPoint?.y === right.hotspotPoint?.y
+  );
+}
+
+function stringArraysEqual(left?: string[], right?: string[]) {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => item === right[index]);
+}
+
+function recordsEqual(left?: Record<string, string>, right?: Record<string, string>) {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
 function formatTimer(totalSeconds: number) {
   const safeSeconds = Math.max(totalSeconds, 0);
   const minutes = Math.floor(safeSeconds / 60);
@@ -900,14 +1009,32 @@ function questionLabel(question: Question) {
       return "Chọn 1 đáp án";
     case "multiple_response":
       return "Chọn nhiều đáp án";
+    case "true_false":
+      return "Đúng / Sai";
+    case "short_answer":
+      return "Trả lời ngắn";
+    case "numeric":
+      return "Số học";
     case "matching":
-      return "Ghép cặp";
+      return "Nối cặp";
     case "sequence":
       return "Sắp xếp thứ tự";
+    case "fill_blank":
+      return "Điền chỗ trống";
     case "inline_choice":
       return "Chọn trong dòng";
+    case "select_from_lists":
+      return "Chọn từ danh sách";
+    case "drag_words":
+      return "Kéo từ";
     case "hotspot":
-      return "Chọn vị trí trên ảnh";
+      return "Điểm nóng";
+    case "drag_drop":
+      return "Kéo và thả";
+    case "likert_scale":
+      return "Thang Likert";
+    case "essay":
+      return "Tự luận";
     default:
       return "Câu hỏi";
   }

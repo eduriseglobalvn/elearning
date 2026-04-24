@@ -19,12 +19,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { useI18n } from "@/features/i18n"
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward"
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward"
-import LogoutIcon from "@mui/icons-material/Logout"
-import NotificationsIcon from "@mui/icons-material/Notifications"
-import SettingsIcon from "@mui/icons-material/Settings"
-import VerifiedIcon from "@mui/icons-material/Verified"
+import {
+  ArrowDownwardIcon,
+  ArrowUpwardIcon,
+  LogoutIcon,
+  NotificationsIcon,
+  SettingsIcon,
+  VerifiedIcon,
+} from "@/components/icons"
 
 export function NavUser({
   user,

@@ -16,7 +16,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
 import { useI18n } from "@/features/i18n"
-import ChevronRightIcon from "@mui/icons-material/ChevronRight"
+import { ChevronRightIcon } from "@/components/icons"
 
 export function NavMain({
   items,

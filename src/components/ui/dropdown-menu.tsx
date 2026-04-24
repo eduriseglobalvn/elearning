@@ -1,10 +1,9 @@
 "use client"
 
 import * as React from "react"
-import CheckIcon from "@mui/icons-material/Check"
-import ChevronRightIcon from "@mui/icons-material/ChevronRight"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
+import { CheckIcon, ChevronRightIcon } from "@/components/icons"
 import { cn } from "@/lib/utils"
 
 function DropdownMenu({

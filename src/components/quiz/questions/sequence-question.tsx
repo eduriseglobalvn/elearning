@@ -78,6 +78,7 @@ export function SequenceQuestion({
               const item = itemMap.get(itemId);
               if (!item) return null;
 
+              const originalIndex = itemIds.findIndex((candidateId) => candidateId === itemId);
               const correctPosition = reviewMode && itemId === itemIds[index];
 
               return (
@@ -92,6 +93,7 @@ export function SequenceQuestion({
                       active={activeId === item.id}
                       correct={correctPosition}
                       incorrect={reviewMode && !correctPosition}
+                      reviewIndex={reviewMode && originalIndex >= 0 ? originalIndex + 1 : undefined}
                     />
                   </div>
                 </SequenceRowTarget>
@@ -128,12 +130,14 @@ function DraggableSequenceItem({
   active,
   correct,
   incorrect,
+  reviewIndex,
 }: {
   item: SequenceItem;
   disabled: boolean;
   active: boolean;
   correct?: boolean;
   incorrect?: boolean;
+  reviewIndex?: number;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
@@ -155,6 +159,7 @@ function DraggableSequenceItem({
         locked={disabled}
         correct={correct}
         incorrect={incorrect}
+        reviewIndex={reviewIndex}
         dragProps={{
           ...(attributes as ButtonHTMLAttributes<HTMLButtonElement>),
           ...(listeners as ButtonHTMLAttributes<HTMLButtonElement>),
@@ -172,6 +177,7 @@ function SequenceCard({
   active = false,
   correct = false,
   incorrect = false,
+  reviewIndex,
   dragProps,
 }: {
   item: SequenceItem;
@@ -181,6 +187,7 @@ function SequenceCard({
   active?: boolean;
   correct?: boolean;
   incorrect?: boolean;
+  reviewIndex?: number;
   dragProps?: ButtonHTMLAttributes<HTMLButtonElement>;
 }) {
   const stateClass =
@@ -201,6 +208,14 @@ function SequenceCard({
       style={!overlay && !active && !correct && !incorrect ? { borderColor: "var(--quiz-canvas-border)", backgroundColor: "var(--quiz-input-bg)", color: "var(--quiz-option-text)" } : undefined}
       {...dragProps}
     >
+      {reviewIndex ? (
+        <span
+          className="shrink-0 font-black"
+          style={{ color: correct ? "#78b816" : incorrect ? "#e65a4d" : "currentColor" }}
+        >
+          {reviewIndex}.
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1">{item.label}</span>
       {!overlay ? <span aria-hidden="true" className="text-xl tracking-[-0.16em] text-slate-400">⋮⋮</span> : null}
     </button>

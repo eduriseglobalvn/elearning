@@ -1,5 +1,6 @@
 import { useRef } from "react";
 
+import { useI18n } from "@/features/i18n";
 import type { QuestionComponentProps } from "@/components/quiz/questions/types";
 
 export function HotspotQuestion({
@@ -9,6 +10,7 @@ export function HotspotQuestion({
   submitted = false,
   reviewMode = false,
 }: QuestionComponentProps) {
+  const { t } = useI18n();
   const imageRef = useRef<HTMLDivElement | null>(null);
 
   if (!question.hotspotImage) {
@@ -29,7 +31,11 @@ export function HotspotQuestion({
           onChange({ hotspotPoint: { x, y } });
         }}
       >
-        <img src={question.hotspotImage.url} alt={question.title} className="block h-[280px] w-full object-cover sm:h-[420px]" />
+        <img
+          src={question.hotspotImage.url}
+          alt={question.title}
+          className="block h-[280px] w-full object-cover sm:h-[420px]"
+        />
         {reviewMode
           ? question.hotspotAreas?.map((area) => (
               <div
@@ -55,7 +61,7 @@ export function HotspotQuestion({
           />
         ) : null}
       </div>
-      <p className="text-sm text-slate-500">Nhấp vào hình để đặt điểm trả lời.</p>
+      <p className="text-sm text-slate-500">{t("player.clickImagePrompt")}</p>
     </div>
   );
 }

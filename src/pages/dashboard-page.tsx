@@ -1,5 +1,5 @@
-import { DashboardEditorShell } from "@/components/dashboard/editor-shell";
+import { DashboardShell } from "@/features/dashboard";
 
 export function DashboardPage() {
-  return <DashboardEditorShell />;
+  return <DashboardShell />;
 }

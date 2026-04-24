@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { useI18n } from "@/features/i18n";
 import type { AnswerPayload, Question } from "@/lib/types";
 
 export function QuestionBodyWithImage({
@@ -53,6 +54,8 @@ export function InlineChoiceSelect({
   value: AnswerPayload;
   onChange: (next: AnswerPayload) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <label className="flex-none">
       <select
@@ -73,10 +76,14 @@ export function InlineChoiceSelect({
           })
         }
       >
-        <option value="">- Chọn -</option>
+        <option value="">{t("player.selectPlaceholder")}</option>
         {blank.options.map((option) => (
           <option key={option} value={option}>
-            {option === "yes" ? "Có" : option === "no" ? "Không" : option}
+            {option === "yes"
+              ? t("player.yes")
+              : option === "no"
+                ? t("player.no")
+                : option}
           </option>
         ))}
       </select>

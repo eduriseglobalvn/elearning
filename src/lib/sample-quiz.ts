@@ -17,6 +17,19 @@ export const sampleQuiz: Quiz = {
     shuffleChoices: false,
     revealFeedbackPerStep: true,
   },
+  result: {
+    passMessage: "Chúc mừng, bạn đã đạt!",
+    failMessage: "Rất tiếc bạn đã không đạt!",
+    reviewButtonLabel: "REVIEW QUIZ",
+    thankYouMessage: "Thank you!",
+    showReviewButton: true,
+    submitAllPrompt: "All questions have been answered. Would you like to submit your answers?",
+    confirmSubmitPrompt: "Are you sure you're ready to submit your answers and finish the quiz?",
+    submitAllLabel: "SUBMIT ALL",
+    returnToQuizLabel: "RETURN TO QUIZ",
+    confirmYesLabel: "YES",
+    confirmNoLabel: "NO",
+  },
   sections: [
     {
       id: "section-1",

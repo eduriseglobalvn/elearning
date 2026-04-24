@@ -22,6 +22,20 @@ export type QuizSettings = {
   revealFeedbackPerStep: boolean;
 };
 
+export type QuizResultDisplay = {
+  passMessage: string;
+  failMessage: string;
+  reviewButtonLabel: string;
+  thankYouMessage: string;
+  showReviewButton: boolean;
+  submitAllPrompt: string;
+  confirmSubmitPrompt: string;
+  submitAllLabel: string;
+  returnToQuizLabel: string;
+  confirmYesLabel: string;
+  confirmNoLabel: string;
+};
+
 export type Feedback = {
   correct: string;
   incorrect: string;
@@ -113,6 +127,7 @@ export type Quiz = {
   themeId: string;
   theme: Theme;
   settings: QuizSettings;
+  result?: QuizResultDisplay;
   sections: Section[];
 };
 

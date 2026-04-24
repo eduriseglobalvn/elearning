@@ -4,7 +4,7 @@ import { QuizThemeSurface } from "@/components/quiz/quiz-theme-surface";
 import { QuestionRenderer } from "@/components/quiz/question-renderer";
 import { createAttempt, fetchQuiz, submitAnswer, submitAttempt } from "@/lib/api";
 import { createInitialAnswer, getAllQuestions, isAnswerComplete, normalizeAnswerForSubmission } from "@/lib/quiz";
-import type { AnswerPayload, Attempt, Question, Quiz } from "@/lib/types";
+import type { AnswerPayload, Attempt, Question, Quiz, QuizResultDisplay } from "@/lib/types";
 
 type LoadState =
   | { status: "loading" }
@@ -12,14 +12,29 @@ type LoadState =
   | { status: "error"; message: string };
 
 type SidebarTab = "outline" | "notes";
+type SubmitDialogMode = "all-answered" | "confirm";
 
 const navButtonClass =
   "inline-flex min-h-10 min-w-[92px] items-center justify-center rounded-xl border border-transparent px-4 text-sm font-black text-white shadow-[0_14px_32px_rgba(0,0,139,0.16)] transition disabled:cursor-not-allowed disabled:opacity-40";
 const secondaryButtonClass =
   "inline-flex min-h-10 min-w-[92px] items-center justify-center rounded-xl border px-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40";
-const playerViewportClass = "lg:h-[min(820px,calc(100vh-11rem))]";
+const playerViewportClass = "lg:h-[min(900px,calc(100vh-8rem))]";
 
-export function PlayerShell() {
+const defaultResultDisplay: QuizResultDisplay = {
+  passMessage: "Chúc mừng, bạn đã đạt!",
+  failMessage: "Rất tiếc bạn đã không đạt!",
+  reviewButtonLabel: "REVIEW QUIZ",
+  thankYouMessage: "Thank you!",
+  showReviewButton: true,
+  submitAllPrompt: "All questions have been answered. Would you like to submit your answers?",
+  confirmSubmitPrompt: "Are you sure you're ready to submit your answers and finish the quiz?",
+  submitAllLabel: "SUBMIT ALL",
+  returnToQuizLabel: "RETURN TO QUIZ",
+  confirmYesLabel: "YES",
+  confirmNoLabel: "NO",
+};
+
+export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -27,14 +42,32 @@ export function PlayerShell() {
   const [submitting, setSubmitting] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("outline");
   const [sidebarQuery, setSidebarQuery] = useState("");
+  const [submitDialogMode, setSubmitDialogMode] = useState<SubmitDialogMode | null>(null);
+  const [reviewingSubmittedAttempt, setReviewingSubmittedAttempt] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const autoAdvanceRef = useRef<number | null>(null);
-
   useEffect(() => {
+    setLoadState({ status: "loading" });
+    setStarted(false);
+    setCurrentIndex(0);
+    setDrafts({});
+    setSubmitting(false);
+    setSidebarTab("outline");
+    setSidebarQuery("");
+    setSubmitDialogMode(null);
+    setReviewingSubmittedAttempt(false);
+    setSessionStartedAt(null);
+    setRemainingSeconds(null);
+
+    if (autoAdvanceRef.current !== null) {
+      window.clearTimeout(autoAdvanceRef.current);
+      autoAdvanceRef.current = null;
+    }
+
     async function load() {
       try {
-        const quiz = await fetchQuiz("avs-demo");
+        const quiz = await fetchQuiz(quizId);
         const attempt = await createAttempt(quiz.id);
         setLoadState({ status: "ready", quiz, attempt });
       } catch (error) {
@@ -46,7 +79,7 @@ export function PlayerShell() {
     }
 
     void load();
-  }, []);
+  }, [quizId]);
 
   useEffect(() => {
     return () => {
@@ -159,6 +192,7 @@ export function PlayerShell() {
   const readyQuiz: Quiz = activeQuiz;
   const readyAttempt: Attempt = activeAttempt;
   const readyQuestion: Question = activeQuestion;
+  const resultDisplay: QuizResultDisplay = { ...defaultResultDisplay, ...(readyQuiz.result ?? {}) };
 
   const playerCardStyle = {
     backgroundColor: "var(--quiz-player-bg)",
@@ -229,6 +263,8 @@ export function PlayerShell() {
   }
 
   async function handleFinalizeAttempt() {
+    setSubmitDialogMode(null);
+    setReviewingSubmittedAttempt(false);
     setSubmitting(true);
     try {
       const answerMap = Object.fromEntries(
@@ -242,6 +278,15 @@ export function PlayerShell() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleRequestSubmit() {
+    setSubmitDialogMode(allQuestionsAnswered ? "all-answered" : "confirm");
+  }
+
+  function handleReviewQuiz() {
+    setReviewingSubmittedAttempt(true);
+    setCurrentIndex(0);
   }
 
   function handleJumpToQuestion(index: number) {
@@ -357,7 +402,7 @@ export function PlayerShell() {
 
   if (!started) {
     return (
-      <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_292px]">
+      <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section
           className={`flex flex-col rounded-[32px] border p-3 shadow-[var(--erg-shadow-lg)] ${playerViewportClass}`}
           style={playerCardStyle}
@@ -453,7 +498,7 @@ export function PlayerShell() {
   }
 
   return (
-    <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_292px]">
+    <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <section
         className={`flex min-w-0 flex-col rounded-[32px] border p-3 shadow-[var(--erg-shadow-lg)] ${playerViewportClass}`}
         style={playerCardStyle}
@@ -489,11 +534,23 @@ export function PlayerShell() {
           }}
         >
           <div className="mx-3 mt-3 rounded-[20px] px-4 py-4 sm:mx-6 sm:mt-6 sm:px-5" style={headerStyle}>
-            <h2 className="text-2xl font-bold leading-[1.18] sm:text-3xl lg:text-[40px]">{readyQuestion.title}</h2>
+            <h2 className="text-2xl font-bold leading-[1.18] sm:text-3xl lg:text-[40px]">
+              {attemptCompleted && !reviewingSubmittedAttempt ? resultDisplay[readyAttempt.passed ? "passMessage" : "failMessage"] : readyQuestion.title}
+            </h2>
           </div>
 
           <div className="relative min-h-[460px] overflow-auto px-4 pb-12 pt-5 sm:px-8 lg:min-h-0 lg:flex-1">
-            {attemptCompleted ? (
+            {attemptCompleted && !reviewingSubmittedAttempt ? (
+              <FinalResultScreen
+                attempt={readyAttempt}
+                resultDisplay={resultDisplay}
+                onReview={handleReviewQuiz}
+              />
+            ) : null}
+
+            {attemptCompleted && !reviewingSubmittedAttempt ? null : (
+              <>
+            {false ? (
               <div className="mb-5 overflow-hidden rounded-[26px] border border-slate-200 bg-white/90 shadow-[0_14px_28px_rgba(26,44,64,0.09)]">
                 <div className="flex items-center justify-between px-4 py-3 text-sm font-black text-white" style={accentButtonStyle}>
                   <span>Kết quả bài làm</span>
@@ -572,6 +629,8 @@ export function PlayerShell() {
             <div className="pointer-events-none absolute bottom-4 right-6 text-xl font-extrabold opacity-30 sm:text-2xl" style={{ color: "var(--quiz-option-text)" }}>
               ERG E-LEARNING
             </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -606,6 +665,14 @@ export function PlayerShell() {
                 {submitting ? "ĐANG XEM..." : isLastQuestion && submitted ? "HOÀN TẤT" : "ĐÁP ÁN"}
               </button>
             </div>
+          ) : attemptCompleted && !reviewingSubmittedAttempt ? (
+            <div className="ml-auto flex flex-wrap gap-2">
+              {resultDisplay.showReviewButton ? (
+                <button className={navButtonClass} style={accentButtonStyle} type="button" onClick={handleReviewQuiz}>
+                  {resultDisplay.reviewButtonLabel}
+                </button>
+              ) : null}
+            </div>
           ) : (
             <div className="ml-auto flex flex-wrap gap-2">
               <button
@@ -630,9 +697,9 @@ export function PlayerShell() {
                 <button
                   className={navButtonClass}
                   style={accentButtonStyle}
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void handleFinalizeAttempt()}
+                type="button"
+                disabled={submitting}
+                  onClick={handleRequestSubmit}
                 >
                   {submitting ? "ĐANG NỘP..." : "NỘP BÀI"}
                 </button>
@@ -643,7 +710,126 @@ export function PlayerShell() {
       </section>
 
       {renderSidebar()}
+
+      {submitDialogMode ? (
+        <SubmitConfirmDialog
+          mode={submitDialogMode}
+          resultDisplay={resultDisplay}
+          submitting={submitting}
+          onCancel={() => setSubmitDialogMode(null)}
+          onConfirm={() => void handleFinalizeAttempt()}
+        />
+      ) : null}
     </QuizThemeSurface>
+  );
+}
+
+function FinalResultScreen({
+  attempt,
+  resultDisplay,
+  onReview,
+}: {
+  attempt: Attempt;
+  resultDisplay: QuizResultDisplay;
+  onReview: () => void;
+}) {
+  const resultMessage = attempt.passed ? resultDisplay.passMessage : resultDisplay.failMessage;
+
+  return (
+    <div className="relative grid min-h-[500px] place-items-center overflow-hidden bg-white px-8 py-10">
+      <div className="pointer-events-none absolute left-8 top-7 h-28 w-36 rounded-[52%] bg-emerald-100 opacity-70" />
+      <div className="pointer-events-none absolute -left-20 top-52 h-28 w-80 rotate-[-24deg] rounded-full bg-pink-300 opacity-70" />
+      <div className="pointer-events-none absolute right-[-72px] top-5 h-24 w-96 rotate-[-24deg] rounded-full bg-sky-300 opacity-80" />
+      <div className="pointer-events-none absolute right-[-60px] top-28 h-24 w-72 rotate-[-24deg] rounded-full bg-pink-300 opacity-75" />
+      <div className="pointer-events-none absolute bottom-8 right-28 h-44 w-56 rounded-[42%] bg-amber-100 opacity-80" />
+
+      <div className="relative z-10 grid justify-items-center gap-5 text-center">
+        <div
+          className={`grid h-24 w-24 place-items-center rounded-full text-6xl font-light text-white ${
+            attempt.passed ? "bg-emerald-500" : "bg-[#f35b48]"
+          }`}
+        >
+          {attempt.passed ? "✓" : "×"}
+        </div>
+        <h2 className="text-3xl font-black tracking-[0.08em] text-[#b9535f] sm:text-4xl">
+          {resultMessage}
+        </h2>
+        <div className="grid gap-2">
+          <span className="text-2xl font-black text-[#173653]">Điểm</span>
+          <strong className="text-3xl font-black text-[#b9535f]">
+            {attempt.totalScore}/{attempt.maxScore}
+          </strong>
+          <span className="text-sm font-black uppercase tracking-[0.14em] text-slate-400">
+            {attempt.percent}%
+          </span>
+        </div>
+        {resultDisplay.showReviewButton ? (
+          <button
+            type="button"
+            onClick={onReview}
+            className="min-h-14 rounded-lg border-2 border-blue-500 bg-[#1e6172] px-7 text-xl font-black uppercase tracking-[0.05em] text-white shadow-[0_14px_28px_rgba(29,78,216,0.18)]"
+          >
+            {resultDisplay.reviewButtonLabel}
+          </button>
+        ) : null}
+        <div className="text-5xl font-black tracking-[0.06em] text-fuchsia-300 opacity-90">
+          {resultDisplay.thankYouMessage}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubmitConfirmDialog({
+  mode,
+  resultDisplay,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  mode: SubmitDialogMode;
+  resultDisplay: QuizResultDisplay;
+  submitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isAllAnswered = mode === "all-answered";
+
+  return (
+    <div className="fixed inset-0 z-[260] grid place-items-center bg-black/10">
+      <div className="flex w-[min(590px,calc(100vw-56px))] items-center gap-4 border border-slate-300 bg-white px-7 py-8 shadow-[0_8px_24px_rgba(15,23,42,0.28)]">
+        <div className="grid h-8 w-8 flex-none place-items-center rounded-full border-2 border-slate-500 text-xl font-black text-slate-500">
+          ?
+        </div>
+        <div className="grid flex-1 gap-6">
+          <p className="text-sm font-medium text-slate-900">
+            {isAllAnswered ? resultDisplay.submitAllPrompt : resultDisplay.confirmSubmitPrompt}
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={onConfirm}
+              className="min-h-9 min-w-[136px] bg-[#4f86dd] px-5 text-sm font-black text-white shadow-sm outline outline-1 outline-offset-[-4px] outline-white/45 disabled:opacity-60"
+            >
+              {submitting
+                ? "SUBMITTING..."
+                : isAllAnswered
+                  ? resultDisplay.submitAllLabel
+                  : resultDisplay.confirmYesLabel}
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={onCancel}
+              className="min-h-9 min-w-[136px] bg-[#4f86dd] px-5 text-sm font-black text-white shadow-sm disabled:opacity-60"
+            >
+              {isAllAnswered ? resultDisplay.returnToQuizLabel : resultDisplay.confirmNoLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

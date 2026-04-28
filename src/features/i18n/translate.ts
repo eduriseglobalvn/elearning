@@ -14,8 +14,8 @@ export function getPreferredLocale(): Locale {
     return stored;
   }
 
-  const browserLocale = window.navigator.language.toLowerCase();
-  return browserLocale.startsWith("en") ? "en" : "vi";
+  // Mặc định luôn là tiếng Việt nếu người dùng chưa chọn thủ công
+  return "vi";
 }
 
 export function setPreferredLocale(locale: Locale) {

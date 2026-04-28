@@ -9,6 +9,7 @@ type DashboardPageShellProps = {
   description: string;
   breadcrumbs: string[];
   actions?: ReactNode;
+  headerContent?: ReactNode;
   children: ReactNode;
 };
 
@@ -63,6 +64,7 @@ export function DashboardPageShell({
   description,
   breadcrumbs,
   actions,
+  headerContent,
   children,
 }: DashboardPageShellProps) {
   return (
@@ -91,6 +93,7 @@ export function DashboardPageShell({
             </div>
             {actions ? <div className="flex shrink-0 flex-wrap items-center gap-3">{actions}</div> : null}
           </div>
+          {headerContent ? <div className="mt-5 border-t border-slate-100 pt-5">{headerContent}</div> : null}
         </section>
         {children}
       </div>

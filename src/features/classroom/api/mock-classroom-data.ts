@@ -8,6 +8,7 @@ import type {
   LeaderboardEntry,
   LeaderboardScope,
   LearnerJourney,
+  StudentStatus,
 } from "@/features/classroom/types/classroom-types";
 
 export const classroomClusters: Array<{ id: ClassroomClusterId; label: string }> = [
@@ -64,7 +65,7 @@ export const classroomSnapshots: ClassroomSnapshot[] = [
     className: "Lớp 6A1",
     gradeLabel: "Khối 6",
     homeroomTeacher: "Ngọc Anh",
-    studentCount: 32,
+    studentCount: 50,
     activeAssignments: 4,
     completionRate: 91,
     averageScore: 86,
@@ -205,7 +206,7 @@ export const assignmentRuns: AssignmentRun[] = [
   },
 ];
 
-export const classroomStudents: ClassroomStudent[] = [
+const baseClassroomStudents: ClassroomStudent[] = [
   {
     id: "student-ngoc-linh",
     name: "Võ Ngọc Linh",
@@ -378,6 +379,125 @@ export const classroomStudents: ClassroomStudent[] = [
     lastActivity: "22 phút trước",
   },
 ];
+
+const generated6A1Names = [
+  "Nguyễn Bảo An",
+  "Trần Minh Anh",
+  "Lê Tuấn Anh",
+  "Phạm Gia Bảo",
+  "Hoàng Nhật Bảo",
+  "Đỗ Ngọc Châu",
+  "Vũ Minh Châu",
+  "Bùi Khánh Chi",
+  "Nguyễn Đức Duy",
+  "Trần Hải Đăng",
+  "Lê Minh Đức",
+  "Phạm Thùy Dương",
+  "Hoàng Gia Huy",
+  "Đặng Tuấn Khang",
+  "Nguyễn Khánh Linh",
+  "Trần Bảo Long",
+  "Lê Hoàng Minh",
+  "Phạm Anh Minh",
+  "Vũ Nhật Nam",
+  "Bùi Hà My",
+  "Nguyễn Yến Nhi",
+  "Trần Minh Quân",
+  "Lê Thanh Tâm",
+  "Phạm Gia Tuệ",
+  "Hoàng Minh Tuệ",
+  "Đặng Phương Uyên",
+  "Nguyễn Quốc Việt",
+  "Trần Anh Vũ",
+  "Lê Hải Yến",
+  "Phạm Thiên Ân",
+  "Vũ Bảo Ngọc",
+  "Bùi Hoàng Phúc",
+  "Nguyễn Nam Phong",
+  "Trần Hà Vy",
+  "Lê Quỳnh Anh",
+  "Phạm Minh Khoa",
+  "Hoàng Anh Thư",
+  "Đặng Gia Hưng",
+  "Nguyễn Hồng Nhung",
+  "Trần Tuấn Kiệt",
+  "Lê Phương Mai",
+  "Phạm Bảo Trân",
+  "Vũ Đức Anh",
+  "Bùi Minh Triết",
+  "Nguyễn Thiên Kim",
+];
+
+const generatedAssignmentPool = [
+  {
+    currentAssignment: "IC3 GS6 L1 - Thiết bị và hệ điều hành Train",
+    stages: ["Chưa mở bài", "Đang làm checkpoint 1/3", "Đang làm checkpoint 2/3", "Hoàn thành, chờ phản hồi"],
+  },
+  {
+    currentAssignment: "IC3 GS6 L1 - Internet an toàn Test",
+    stages: ["Đang làm câu 4/12", "Đang làm câu 8/12", "Hoàn thành bài kiểm tra", "Cần xem lại câu sai"],
+  },
+  {
+    currentAssignment: "IC3 GS6 L2 - Excel nhập môn Train",
+    stages: ["Đang luyện thao tác bảng", "Đang làm checkpoint 2/4", "Hoàn thành bài luyện", "Chưa mở bài"],
+  },
+  {
+    currentAssignment: "IC3 GS6 L2 - PowerPoint Test",
+    stages: ["Đang làm câu 5/10", "Chờ nộp phần trình bày", "Hoàn thành, chờ chấm", "Cần bổ sung slide cuối"],
+  },
+  {
+    currentAssignment: "IC3 GS6 L3 - Bảo mật tài khoản Train",
+    stages: ["Đang đọc tình huống", "Đang làm checkpoint 3/5", "Hoàn thành 100%", "Cần xem lại mật khẩu mạnh"],
+  },
+];
+
+function getAvatarSeed(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function createGenerated6A1Students(): ClassroomStudent[] {
+  const existing6A1Count = baseClassroomStudents.filter((student) => student.classId === "class-6a1").length;
+  const neededCount = Math.max(0, 50 - existing6A1Count);
+
+  return generated6A1Names.slice(0, neededCount).map((name, index) => {
+    const assignment = generatedAssignmentPool[index % generatedAssignmentPool.length];
+    const progressRate = [0, 18, 32, 45, 58, 67, 76, 84, 93, 100][index % 10];
+    const status: StudentStatus = progressRate < 45 ? "support" : progressRate >= 84 ? "ahead" : "steady";
+
+    return {
+      id: `student-6a1-generated-${index + 1}`,
+      name,
+      schoolId: "school-erg-alpha",
+      schoolName: "ERG Alpha Campus",
+      classId: "class-6a1",
+      className: "Lớp 6A1",
+      gradeLabel: "Khối 6",
+      avatarSeed: getAvatarSeed(name),
+      currentAssignment: assignment.currentAssignment,
+      currentStage: assignment.stages[index % assignment.stages.length],
+      progressRate,
+      averageScore: Math.min(98, 64 + ((index * 7) % 34)),
+      streakDays: 1 + (index % 14),
+      completedAssignments: 8 + (index % 13),
+      status,
+      mentorNote:
+        status === "support"
+          ? "Cần chia bài thành chặng ngắn và nhắc mở bài trong giờ tự học."
+          : status === "ahead"
+            ? "Có thể giao thêm bài nâng cao hoặc nhờ hỗ trợ bạn trong nhóm."
+            : "Giữ nhịp ổn định, nên theo dõi thêm tốc độ hoàn thành trong tuần.",
+      lastActivity: `${5 + index * 3} phút trước`,
+    };
+  });
+}
+
+export const classroomStudents: ClassroomStudent[] = [...baseClassroomStudents, ...createGenerated6A1Students()];
 
 export const interventionQueue: InterventionItem[] = [
   {

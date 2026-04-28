@@ -1,10 +1,15 @@
 import type { QuestionType } from "@/features/quiz-editor/types/quiz-editor-types";
+import type { ContentScope } from "@/types/scope-types";
 
-export type QuestionBankSubjectId = "mathematics" | "english" | "science" | "informatics";
+export type QuestionBankSubjectId = "ic3-gs6" | "mathematics" | "english" | "science";
 
 export type QuestionBankDifficulty = "core" | "stretch" | "challenge";
 
 export type QuestionBankStatus = "ready" | "reviewing" | "pilot";
+
+export type QuizBankKind = "train" | "test";
+
+export type QuizBankStatus = "ready" | "draft" | "reviewing";
 
 export type QuestionBankChoice = {
   id: string;
@@ -15,19 +20,33 @@ export type QuestionBankChoice = {
 export type QuestionBankCategory = {
   id: string;
   label: string;
+  levelId: string;
+};
+
+export type QuestionBankLevel = {
+  id: string;
+  label: string;
+  description: string;
+  categoryIds: string[];
 };
 
 export type QuestionBankSubject = {
   id: QuestionBankSubjectId;
   label: string;
+  description: string;
+  companyScopeLabel: string;
+  levels: QuestionBankLevel[];
   categories: QuestionBankCategory[];
 };
 
 export type QuestionBankQuestion = {
   id: string;
+  scope: ContentScope;
   subjectId: QuestionBankSubjectId;
-  categoryId: string;
   subjectLabel: string;
+  levelId: string;
+  levelLabel: string;
+  categoryId: string;
   categoryLabel: string;
   gradeLabel: string;
   type: QuestionType;
@@ -44,4 +63,24 @@ export type QuestionBankQuestion = {
   rationale?: string;
   answer?: string;
   choices?: QuestionBankChoice[];
+};
+
+export type QuizBankItem = {
+  id: string;
+  scope: ContentScope;
+  title: string;
+  kind: QuizBankKind;
+  status: QuizBankStatus;
+  subjectId: QuestionBankSubjectId;
+  subjectLabel: string;
+  levelId: string;
+  levelLabel: string;
+  topicLabels: string[];
+  questionIds: string[];
+  questionCount: number;
+  durationLabel: string;
+  scopeLabel: string;
+  sourceMode: "manual" | "auto-random";
+  ownerLabel: string;
+  updatedAt: string;
 };

@@ -1,31 +1,60 @@
 import { useMemo, useState } from "react";
 import EmojiEventsOutlinedIcon from "@mui/icons-material/EmojiEventsOutlined";
-import MilitaryTechOutlinedIcon from "@mui/icons-material/MilitaryTechOutlined";
-import StarsOutlinedIcon from "@mui/icons-material/StarsOutlined";
-import WorkspacePremiumOutlinedIcon from "@mui/icons-material/WorkspacePremiumOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
+import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
 
-import { DashboardMetricCard, DashboardPageShell, DashboardSectionCard, DashboardSegmentedControl, DashboardStatusBadge } from "@/components/dashboard/dashboard-page-shell";
-import { Button, ProgressBar } from "@/components/ui/dashboard-kit";
-import { useI18n } from "@/features/i18n";
-import { getLeaderboard, leaderboardByScope } from "@/features/classroom/api/mock-classroom-data";
-import type { LeaderboardScope } from "@/features/classroom/types/classroom-types";
+import {
+  DashboardMetricCard,
+  DashboardPageShell,
+  DashboardSectionCard,
+  DashboardSegmentedControl,
+} from "@/components/dashboard/dashboard-page-shell";
+import { Badge, Button, ProgressBar } from "@/components/ui/dashboard-kit";
+import {
+  classroomSchools,
+  getLeaderboard,
+  getSchoolSnapshots,
+} from "@/features/classroom/api/mock-classroom-data";
+import type { ClassroomSnapshot, LeaderboardEntry, LeaderboardScope } from "@/features/classroom/types/classroom-types";
 import type { DashboardLeaf } from "@/features/dashboard/types/dashboard-types";
+import { useI18n } from "@/features/i18n";
 
 export function ClassReportsWorkspace({
   activeLeaf,
   onOpenLeaf,
+  selectedClassId,
+  selectedSchoolId,
 }: {
   activeLeaf: DashboardLeaf;
   onOpenLeaf: (leafId: string) => void;
+  selectedClassId: string;
+  selectedSchoolId: string;
 }) {
   const { locale } = useI18n();
   const copy = locale === "vi" ? viCopy : enCopy;
   const [scope, setScope] = useState<LeaderboardScope>("class");
 
-  const leaderboard = useMemo(() => getLeaderboard(scope), [scope]);
+  const school = classroomSchools.find((item) => item.id === selectedSchoolId) ?? classroomSchools[0];
+  const schoolClasses = useMemo(() => getSchoolSnapshots(selectedSchoolId), [selectedSchoolId]);
+  const selectedClass = schoolClasses.find((item) => item.id === selectedClassId) ?? schoolClasses[0];
+  const leaderboard = useMemo(() => {
+    const base = getLeaderboard(scope);
+    if (scope === "cluster") return base;
+
+    const bySchool = base.filter((entry) => entry.schoolName === school.name);
+    if (scope === "class" && selectedClass) {
+      const byClass = bySchool.filter((entry) => entry.className === selectedClass.className);
+      return byClass.length ? byClass : bySchool.length ? bySchool : base;
+    }
+    return bySchool.length ? bySchool : base;
+  }, [school.name, scope, selectedClass]);
+
   const leader = leaderboard[0];
-  const runnerUp = leaderboard[1];
-  const risingStar = [...leaderboard].sort((left, right) => right.momentum - left.momentum)[0];
+  const averageCompletion = selectedClass?.completionRate ?? 0;
+  const averageScore = selectedClass?.averageScore ?? 0;
+  const supportTotal = selectedClass?.riskStudents ?? 0;
+  const strongestClass = selectedClass;
+  const classNeedingCare = selectedClass;
 
   return (
     <DashboardPageShell
@@ -34,51 +63,39 @@ export function ClassReportsWorkspace({
       description={copy.description}
       breadcrumbs={activeLeaf.breadcrumb}
       actions={
-        <>
-          <DashboardSegmentedControl
-            options={[
-              { value: "class", label: copy.scope.class },
-              { value: "grade", label: copy.scope.grade },
-              { value: "school", label: copy.scope.school },
-              { value: "cluster", label: copy.scope.cluster },
-            ]}
-            value={scope}
-            onChange={(value) => setScope(value as LeaderboardScope)}
-          />
-          <Button variant="outline" onClick={() => onOpenLeaf("student-journey")}>
-            {copy.openJourney}
-          </Button>
-        </>
+        <Button variant="outline" onClick={() => onOpenLeaf("class-students")}>
+          {copy.openJourney}
+        </Button>
       }
     >
       <div className="grid gap-4 xl:grid-cols-4">
         <DashboardMetricCard
-          label={copy.metrics.topRank}
-          value={leader?.name ?? "-"}
-          detail={`${leader?.className ?? "-"} • ${leader?.schoolName ?? "-"}`}
-          delta={leader?.badge ?? copy.noBadge}
-          icon={<WorkspacePremiumOutlinedIcon fontSize="inherit" />}
-          tone="amber"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.secondRank}
-          value={runnerUp?.name ?? "-"}
-          detail={`${runnerUp?.completionRate ?? 0}% ${copy.completionLabel}`}
-          delta={copy.metrics.secondRankDelta}
-          icon={<MilitaryTechOutlinedIcon fontSize="inherit" />}
-          tone="blue"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.risingStar}
-          value={risingStar?.name ?? "-"}
-          detail={`${risingStar?.momentum ?? 0} ${copy.momentumLabel}`}
-          delta={copy.metrics.risingStarDelta}
-          icon={<StarsOutlinedIcon fontSize="inherit" />}
+          label={copy.metrics.completion}
+          value={`${averageCompletion}%`}
+          detail={copy.metrics.completionDetail}
+          delta={strongestClass ? copy.metrics.strongest(strongestClass.className) : "-"}
+          icon={<TrendingUpOutlinedIcon fontSize="inherit" />}
           tone="emerald"
         />
         <DashboardMetricCard
+          label={copy.metrics.score}
+          value={`${averageScore}`}
+          detail={copy.metrics.scoreDetail}
+          delta={leader ? copy.metrics.leader(leader.name) : copy.noData}
+          icon={<EmojiEventsOutlinedIcon fontSize="inherit" />}
+          tone="amber"
+        />
+        <DashboardMetricCard
+          label={copy.metrics.support}
+          value={`${supportTotal}`}
+          detail={copy.metrics.supportDetail}
+          delta={classNeedingCare ? copy.metrics.watch(classNeedingCare.className) : "-"}
+          icon={<InsightsOutlinedIcon fontSize="inherit" />}
+          tone="rose"
+        />
+        <DashboardMetricCard
           label={copy.metrics.scopeSize}
-          value={`${leaderboardByScope[scope].length}`}
+          value={`${leaderboard.length}`}
           detail={copy.metrics.scopeSizeDetail(scope)}
           delta={copy.metrics.scopeSizeDelta}
           icon={<EmojiEventsOutlinedIcon fontSize="inherit" />}
@@ -86,99 +103,145 @@ export function ClassReportsWorkspace({
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_360px]">
-        <DashboardSectionCard title={copy.leaderboardTitle} description={copy.leaderboardDescription}>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.85fr)]">
+        <DashboardSectionCard
+          title={copy.leaderboardTitle}
+          description={copy.leaderboardDescription}
+          action={
+            <DashboardSegmentedControl
+              options={[
+                { value: "class", label: copy.scope.class },
+                { value: "grade", label: copy.scope.grade },
+                { value: "school", label: copy.scope.school },
+                { value: "cluster", label: copy.scope.cluster },
+              ]}
+              value={scope}
+              onChange={(value) => setScope(value as LeaderboardScope)}
+            />
+          }
+        >
           <div className="space-y-3">
             {leaderboard.map((entry, index) => (
-              <div key={entry.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
-                    #{index + 1}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-base font-semibold text-slate-950">{entry.name}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {entry.className} • {entry.schoolName}
-                    </div>
-                  </div>
-                  <DashboardStatusBadge label={entry.badge} tone={index === 0 ? "success" : "secondary"} />
-                </div>
-
-                <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{copy.scoreLabel}</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{entry.score}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{copy.completionLabel}</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{entry.completionRate}%</div>
-                    <ProgressBar value={entry.completionRate} className="mt-2 h-2.5 bg-slate-200" indicatorClassName="bg-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{copy.momentumLabel}</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">+{entry.momentum}</div>
-                    <div className="mt-1 text-xs text-slate-500">{copy.pointsThisWeek}</div>
-                  </div>
-                </div>
-              </div>
+              <LeaderboardRow key={entry.id} copy={copy} entry={entry} rank={index + 1} />
             ))}
           </div>
         </DashboardSectionCard>
 
-        <DashboardSectionCard title={copy.evaluationTitle} description={copy.evaluationDescription}>
-          <div className="space-y-3">
-            <EvaluationCard
-              title={copy.evaluation.fastTrackTitle}
-              description={copy.evaluation.fastTrackDescription}
-              tone="success"
-            />
-            <EvaluationCard
-              title={copy.evaluation.steadyTitle}
-              description={copy.evaluation.steadyDescription}
-              tone="secondary"
-            />
-            <EvaluationCard
-              title={copy.evaluation.coachTitle}
-              description={copy.evaluation.coachDescription}
-              tone="warning"
-            />
-          </div>
-        </DashboardSectionCard>
-      </div>
+        <div className="space-y-4">
+          <DashboardSectionCard title={copy.breakdownTitle} description={copy.breakdownDescription}>
+            <div className="space-y-3">
+              {selectedClass ? [selectedClass].map((snapshot) => (
+                <ClassBreakdown key={snapshot.id} copy={copy} snapshot={snapshot} />
+              )) : null}
+            </div>
+          </DashboardSectionCard>
+
+          <DashboardSectionCard title={copy.insightTitle} description={copy.insightDescription}>
+            <div className="space-y-3">
+              <InsightCard title={copy.insights.publishTitle} body={copy.insights.publishBody(scope)} />
+              <InsightCard
+                title={copy.insights.coachTitle}
+                body={classNeedingCare ? copy.insights.coachBody(classNeedingCare.className) : copy.noData}
+              />
+              <InsightCard
+                title={copy.insights.rewardTitle}
+                body={leader ? copy.insights.rewardBody(leader.name) : copy.noData}
+              />
+            </div>
+          </DashboardSectionCard>
+        </div>
+      </section>
     </DashboardPageShell>
   );
 }
 
-function EvaluationCard({
-  title,
-  description,
-  tone,
+function LeaderboardRow({
+  copy,
+  entry,
+  rank,
 }: {
-  title: string;
-  description: string;
-  tone: "success" | "secondary" | "warning";
+  copy: ReportCopy;
+  entry: LeaderboardEntry;
+  rank: number;
 }) {
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
+    <article className="rounded-[24px] border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-950 text-sm font-semibold text-white">
+          #{rank}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold text-slate-950">{entry.name}</div>
+          <div className="mt-1 text-sm text-slate-500">
+            {entry.className} • {entry.schoolName}
+          </div>
+        </div>
+        <Badge tone={rank === 1 ? "success" : "secondary"}>{entry.badge}</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <MiniMetric label={copy.scoreLabel} value={`${entry.score}`} />
+        <MiniMetric label={copy.completionLabel} value={`${entry.completionRate}%`} />
+        <MiniMetric label={copy.momentumLabel} value={`+${entry.momentum}`} />
+      </div>
+    </article>
+  );
+}
+
+function ClassBreakdown({ copy, snapshot }: { copy: ReportCopy; snapshot: ClassroomSnapshot }) {
+  return (
+    <article className="rounded-[22px] border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-950">{title}</div>
-          <div className="mt-1 text-sm leading-6 text-slate-500">{description}</div>
+          <div className="text-sm font-semibold text-slate-950">{snapshot.className}</div>
+          <div className="mt-1 text-sm text-slate-500">{snapshot.gradeLabel}</div>
         </div>
-        <DashboardStatusBadge
-          label={tone === "success" ? "A" : tone === "secondary" ? "B+" : "Coach"}
-          tone={tone}
+        <Badge tone={snapshot.riskStudents >= 5 ? "warning" : "success"}>
+          {snapshot.riskStudents} {copy.supportUnit}
+        </Badge>
+      </div>
+      <div className="mt-4">
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-500">{copy.completionLabel}</span>
+          <span className="font-semibold text-slate-950">{snapshot.completionRate}%</span>
+        </div>
+        <ProgressBar
+          className="mt-2 h-2 bg-slate-100"
+          indicatorClassName={snapshot.completionRate >= 88 ? "bg-emerald-500" : "bg-amber-500"}
+          value={snapshot.completionRate}
         />
       </div>
+    </article>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-2">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-950">{value}</div>
     </div>
   );
 }
 
+function InsightCard({ body, title }: { body: string; title: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-semibold text-slate-950">{title}</div>
+      <div className="mt-1 text-sm leading-6 text-slate-500">{body}</div>
+    </div>
+  );
+}
+
+type ReportCopy = typeof enCopy;
+
 const viCopy = {
-  badge: "Competition report",
+  badge: "Báo cáo & thi đua",
   description:
-    "Báo cáo kết quả và thi đua được gom về một nơi để giáo viên nhìn được học sinh nổi bật, học sinh bứt tốc và học sinh cần kèm thêm theo lớp, khối, trường hoặc cụm.",
-  openJourney: "Mở hành trình học viên",
+    "Báo cáo gom điểm, hoàn thành, tăng tốc và nhóm cần hỗ trợ thành một câu chuyện dễ hiểu để giáo viên biết nên công bố, khen thưởng hoặc kèm ai.",
+  openJourney: "Xem học sinh",
+  classSelectLabel: "Chọn lớp",
+  noData: "Chưa có dữ liệu",
   scope: {
     class: "Theo lớp",
     grade: "Theo khối",
@@ -186,46 +249,46 @@ const viCopy = {
     cluster: "Theo cụm",
   },
   metrics: {
-    topRank: "Đứng đầu hiện tại",
-    secondRank: "Bám đuổi gần nhất",
-    secondRankDelta: "Khoảng cách đang thu hẹp",
-    risingStar: "Ngôi sao tăng tốc",
-    risingStarDelta: "Tăng mạnh trong 7 ngày",
-    scopeSize: "Số học sinh trên bảng",
-    scopeSizeDetail: (scope: LeaderboardScope) =>
-      scope === "class"
-        ? "Đang so trong phạm vi lớp hiện tại"
-        : scope === "grade"
-          ? "Đang so trên toàn bộ cùng khối"
-          : scope === "school"
-            ? "Đang so trong cùng trường"
-            : "Đang so giữa các cơ sở",
-    scopeSizeDelta: "Có thể dùng để công bố thi đua theo tuần",
+    completion: "Hoàn thành TB",
+    completionDetail: "Mức hoàn thành trung bình của các lớp trong trường.",
+    strongest: (className: string) => `${className} đang dẫn nhịp`,
+    score: "Điểm TB",
+    scoreDetail: "Điểm trung bình đã chấm trong phạm vi đang xem.",
+    leader: (name: string) => `${name} đang dẫn đầu`,
+    support: "Cần hỗ trợ",
+    supportDetail: "Tổng học sinh cần can thiệp trong phạm vi đang xem.",
+    watch: (className: string) => `Theo sát ${className}`,
+    scopeSize: "Số dòng xếp hạng",
+    scopeSizeDetail: (scope: LeaderboardScope) => `Đang xem ${scope}`,
+    scopeSizeDelta: "Dùng cho công bố thi đua tuần",
   },
-  noBadge: "Chưa có huy hiệu",
-  completionLabel: "hoàn thành",
-  momentumLabel: "điểm tăng tốc",
+  leaderboardTitle: "Bảng xếp hạng có ngữ cảnh",
+  leaderboardDescription: "Không chỉ là điểm cao nhất: có cả completion và momentum để xếp hạng công bằng hơn.",
+  breakdownTitle: "Sức khỏe từng lớp",
+  breakdownDescription: "Nhìn nhanh lớp nào đang ổn và lớp nào cần giáo viên kèm.",
+  insightTitle: "Báo cáo này nói gì?",
+  insightDescription: "Diễn giải ngắn để giáo viên biết hành động tiếp theo.",
+  insights: {
+    publishTitle: "Có thể công bố thi đua",
+    publishBody: (scope: LeaderboardScope) => `Phạm vi ${scope} đã đủ dữ liệu để công bố bảng thi đua tuần.`,
+    coachTitle: "Lớp cần kèm trước",
+    coachBody: (className: string) => `${className} có nhiều học sinh cần hỗ trợ nhất, nên ưu tiên checkpoint ngắn.`,
+    rewardTitle: "Nên khen thưởng",
+    rewardBody: (name: string) => `${name} có tín hiệu dẫn đầu, phù hợp gắn huy hiệu hoặc nêu gương.`,
+  },
   scoreLabel: "Điểm",
-  pointsThisWeek: "điểm thi đua tuần này",
-  leaderboardTitle: "Bảng xếp hạng",
-  leaderboardDescription: "Kết hợp điểm, completion và động lượng tiến bộ để xếp hạng một cách công bằng hơn cho giáo viên.",
-  evaluationTitle: "Khung đánh giá nhanh",
-  evaluationDescription: "Giáo viên có thể dùng để gắn nhãn mức độ hiện tại trước khi trao đổi với phụ huynh hoặc cố vấn học tập.",
-  evaluation: {
-    fastTrackTitle: "Nhóm A - Fast track",
-    fastTrackDescription: "Điểm cao, completion ổn định và có sức kéo thi đua cho cả lớp.",
-    steadyTitle: "Nhóm B+ - Giữ nhịp tốt",
-    steadyDescription: "Hoàn thành đều, nên duy trì thử thách vừa phải để tránh chững nhịp.",
-    coachTitle: "Nhóm Coach - Cần kèm",
-    coachDescription: "Cần tăng checkpoint, phản hồi ngắn và cơ chế nhắc việc sát hơn.",
-  },
+  completionLabel: "Hoàn thành",
+  momentumLabel: "Tăng tốc",
+  supportUnit: "cần hỗ trợ",
 };
 
 const enCopy = {
-  badge: "Competition report",
+  badge: "Reports & competition",
   description:
-    "Class results and competition are combined here so teachers can spot standout learners, rising stars, and students who need more coaching by class, grade, school, or cluster.",
-  openJourney: "Open learner journey",
+    "A clear report that combines score, completion, momentum, and support needs so teachers know who to publish, reward, or coach.",
+  openJourney: "View students",
+  classSelectLabel: "Select class",
+  noData: "No data yet",
   scope: {
     class: "By class",
     grade: "By grade",
@@ -233,37 +296,35 @@ const enCopy = {
     cluster: "By cluster",
   },
   metrics: {
-    topRank: "Current leader",
-    secondRank: "Closest challenger",
-    secondRankDelta: "The gap is tightening",
-    risingStar: "Rising star",
-    risingStarDelta: "Strong growth over 7 days",
-    scopeSize: "Students on board",
-    scopeSizeDetail: (scope: LeaderboardScope) =>
-      scope === "class"
-        ? "Currently comparing within one class"
-        : scope === "grade"
-          ? "Currently comparing across the grade"
-          : scope === "school"
-            ? "Currently comparing within one school"
-            : "Currently comparing across campuses",
-    scopeSizeDelta: "Good for weekly competition publishing",
+    completion: "Avg completion",
+    completionDetail: "Average completion across classes in the selected school.",
+    strongest: (className: string) => `${className} is leading rhythm`,
+    score: "Avg score",
+    scoreDetail: "Average graded score in the selected view.",
+    leader: (name: string) => `${name} is leading`,
+    support: "Need support",
+    supportDetail: "Total students needing intervention in this view.",
+    watch: (className: string) => `Watch ${className}`,
+    scopeSize: "Ranked rows",
+    scopeSizeDetail: (scope: LeaderboardScope) => `Viewing ${scope}`,
+    scopeSizeDelta: "Ready for weekly competition sharing",
   },
-  noBadge: "No badge yet",
-  completionLabel: "completion",
-  momentumLabel: "momentum pts",
+  leaderboardTitle: "Contextual leaderboard",
+  leaderboardDescription: "Not just top score: completion and momentum make the ranking easier to explain.",
+  breakdownTitle: "Class health",
+  breakdownDescription: "See which classes are healthy and which need coaching.",
+  insightTitle: "What does this report say?",
+  insightDescription: "Short interpretation so teachers know the next action.",
+  insights: {
+    publishTitle: "Ready to publish",
+    publishBody: (scope: LeaderboardScope) => `The ${scope} view has enough data for weekly competition sharing.`,
+    coachTitle: "Coach this class first",
+    coachBody: (className: string) => `${className} has the highest support need and should get short checkpoints.`,
+    rewardTitle: "Reward signal",
+    rewardBody: (name: string) => `${name} is leading and is a good candidate for a badge or public recognition.`,
+  },
   scoreLabel: "Score",
-  pointsThisWeek: "competition points this week",
-  leaderboardTitle: "Leaderboard",
-  leaderboardDescription: "Blends score, completion, and growth momentum so rankings feel fairer for teachers.",
-  evaluationTitle: "Quick evaluation frame",
-  evaluationDescription: "Useful for fast labeling before a parent update or an academic coaching conversation.",
-  evaluation: {
-    fastTrackTitle: "Group A - Fast track",
-    fastTrackDescription: "High score, stable completion, and strong competition pull for the class.",
-    steadyTitle: "Group B+ - Strong rhythm",
-    steadyDescription: "Consistent completion and ready for moderate challenge without overload.",
-    coachTitle: "Coach group - Needs support",
-    coachDescription: "Needs tighter checkpoints, shorter feedback loops, and stronger reminders.",
-  },
+  completionLabel: "Completion",
+  momentumLabel: "Momentum",
+  supportUnit: "support",
 };

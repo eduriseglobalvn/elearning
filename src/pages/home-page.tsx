@@ -1,5 +1,5 @@
-import { AuthWorkspace } from "@/features/auth";
+import { LandingPageWorkspace } from "@/features/landing";
 
 export function HomePage() {
-  return <AuthWorkspace />;
+  return <LandingPageWorkspace />;
 }

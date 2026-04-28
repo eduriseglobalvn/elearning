@@ -10,10 +10,23 @@ export type StudentDashboardProfile = {
   averageScore: number;
   completedAssignments: number;
   totalAssignments: number;
-  classRank: number;
-  gradeRank: number;
   motivationPoints: number;
   weeklyGoalProgress: number;
+};
+
+export type StudentAssignmentAttempt = {
+  id: string;
+  score: number;
+  maxScore: number;
+  completedAtLabel: string;
+  durationLabel: string;
+};
+
+export type StudentDiscussionImageAttachment = {
+  id: string;
+  type: "image";
+  name: string;
+  url: string;
 };
 
 export type StudentDashboardAssignment = {
@@ -33,16 +46,42 @@ export type StudentDashboardAssignment = {
   statusLabel: string;
   lastActivityLabel: string;
   focusNote: string;
+  attempts: StudentAssignmentAttempt[];
 };
 
-export type StudentLeaderboardEntry = {
+export type StudentDiscussionReply = {
   id: string;
-  name: string;
-  schoolName: string;
+  authorName: string;
+  authorInitials: string;
+  createdAtLabel: string;
+  createdAtMs: number;
+  content: string;
+  attachments: StudentDiscussionImageAttachment[];
+  moderationWarning?: boolean;
+};
+
+export type StudentDiscussionThread = {
+  id: string;
+  title: string;
+  content: string;
+  authorName: string;
+  authorInitials: string;
+  createdAtLabel: string;
+  createdAtMs: number;
   className: string;
-  averageScore: number;
-  completedAssignments: number;
-  motivationPoints: number;
-  badge: string;
-  isCurrentStudent?: boolean;
+  relatedAssignmentTitle?: string;
+  isResolved: boolean;
+  attachments: StudentDiscussionImageAttachment[];
+  moderationWarning?: boolean;
+  replies: StudentDiscussionReply[];
+};
+
+export type StudentTeacherAnnouncement = {
+  id: string;
+  title: string;
+  content: string;
+  teacherName: string;
+  targetLabel: string;
+  createdAtLabel: string;
+  isPinned?: boolean;
 };

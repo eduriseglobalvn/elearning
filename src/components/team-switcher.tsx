@@ -25,17 +25,30 @@ import {
 } from "@/components/icons";
 
 export function TeamSwitcher({
+  activeTeamId,
+  addLabel,
+  menuLabel,
+  onSelectTeam,
+  showAddItem = true,
   teams,
 }: {
   teams: {
+    id?: string;
+    disabled?: boolean;
     name: string;
     logo: React.ReactNode;
     plan: string;
   }[];
+  addLabel?: string;
+  activeTeamId?: string;
+  menuLabel?: string;
+  onSelectTeam?: (team: { id?: string; disabled?: boolean; name: string; plan: string }) => void;
+  showAddItem?: boolean;
 }) {
   const { isMobile } = useSidebar();
   const { t } = useI18n();
-  const [activeTeam, setActiveTeam] = React.useState(teams[0]);
+  const [fallbackActiveTeam, setFallbackActiveTeam] = React.useState(teams[0]);
+  const activeTeam = teams.find((team) => team.id === activeTeamId) ?? fallbackActiveTeam ?? teams[0];
 
   if (!activeTeam) {
     return null;
@@ -70,28 +83,40 @@ export function TeamSwitcher({
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              {t("common.teams")}
+              {menuLabel ?? t("common.teams")}
             </DropdownMenuLabel>
             {teams.map((team, index) => (
               <DropdownMenuItem
                 key={team.name}
-                onClick={() => setActiveTeam(team)}
+                onClick={() => {
+                  setFallbackActiveTeam(team);
+                  onSelectTeam?.(team);
+                }}
                 className="gap-2 p-2"
               >
                 <div className="flex size-6 items-center justify-center rounded-md border">
                   {team.logo}
                 </div>
-                {team.name}
-                <DropdownMenuShortcut>{`Ctrl+${index + 1}`}</DropdownMenuShortcut>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{team.name}</div>
+                  {team.disabled ? (
+                    <div className="text-xs text-rose-500">403 access denied</div>
+                  ) : null}
+                </div>
+                {index < 9 ? <DropdownMenuShortcut>{`Ctrl+${index + 1}`}</DropdownMenuShortcut> : null}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 p-2">
-              <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
-                <AddIcon className="size-4" fontSize="inherit" />
-              </div>
-              <div className="font-medium text-muted-foreground">{t("common.addTeam")}</div>
-            </DropdownMenuItem>
+            {showAddItem ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="gap-2 p-2">
+                  <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
+                    <AddIcon className="size-4" fontSize="inherit" />
+                  </div>
+                  <div className="font-medium text-muted-foreground">{addLabel ?? t("common.addTeam")}</div>
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

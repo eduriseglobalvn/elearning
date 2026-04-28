@@ -3,30 +3,51 @@ import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import RouteOutlinedIcon from "@mui/icons-material/RouteOutlined";
 import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 
-import { DashboardMetricCard, DashboardPageShell, DashboardSectionCard } from "@/components/dashboard/dashboard-page-shell";
-import { Button, ProgressBar } from "@/components/ui/dashboard-kit";
-import { useI18n } from "@/features/i18n";
 import {
+  DashboardMetricCard,
+  DashboardPageShell,
+  DashboardSectionCard,
+  DashboardSegmentedControl,
+} from "@/components/dashboard/dashboard-page-shell";
+import { Badge, Button, ProgressBar } from "@/components/ui/dashboard-kit";
+import {
+  classroomSchools,
   classroomStudents,
+  defaultClassId,
   defaultStudentId,
   getLearnerJourney,
+  getSchoolSnapshots,
 } from "@/features/classroom/api/mock-classroom-data";
 import type { DashboardLeaf } from "@/features/dashboard/types/dashboard-types";
+import { useI18n } from "@/features/i18n";
 import { cn } from "@/lib/utils";
 
 export function StudentJourneyWorkspace({
   activeLeaf,
+  allowedSchoolIds,
   onOpenLeaf,
+  onSelectSchool,
+  selectedSchoolId,
 }: {
   activeLeaf: DashboardLeaf;
+  allowedSchoolIds: string[];
   onOpenLeaf: (leafId: string) => void;
+  onSelectSchool: (schoolId: string) => void;
+  selectedSchoolId: string;
 }) {
   const { locale } = useI18n();
   const copy = locale === "vi" ? viCopy : enCopy;
+  const [classId, setClassId] = useState(defaultClassId);
   const [studentId, setStudentId] = useState(defaultStudentId);
 
-  const student = classroomStudents.find((item) => item.id === studentId) ?? classroomStudents[0];
-  const journey = useMemo(() => getLearnerJourney(studentId), [studentId]);
+  const schoolClasses = useMemo(() => getSchoolSnapshots(selectedSchoolId), [selectedSchoolId]);
+  const selectedClass = schoolClasses.find((item) => item.id === classId) ?? schoolClasses[0];
+  const students = useMemo(
+    () => classroomStudents.filter((student) => student.schoolId === selectedSchoolId && student.classId === selectedClass?.id),
+    [selectedClass?.id, selectedSchoolId],
+  );
+  const student = students.find((item) => item.id === studentId) ?? students[0] ?? classroomStudents[0];
+  const journey = useMemo(() => getLearnerJourney(student?.id ?? defaultStudentId), [student?.id]);
 
   return (
     <DashboardPageShell
@@ -36,17 +57,32 @@ export function StudentJourneyWorkspace({
       breadcrumbs={activeLeaf.breadcrumb}
       actions={
         <>
-          <select
-            value={studentId}
-            onChange={(event) => setStudentId(event.target.value)}
-            className="h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 shadow-sm outline-none"
-          >
-            {classroomStudents.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} • {item.className}
-              </option>
-            ))}
-          </select>
+          <DashboardSegmentedControl
+            options={classroomSchools.map((item) => ({
+              value: item.id,
+              label: allowedSchoolIds.includes(item.id) ? item.name : `${item.name} (403)`,
+            }))}
+            value={selectedSchoolId}
+            onChange={(schoolId) => {
+              onSelectSchool(schoolId);
+              setStudentId("");
+            }}
+          />
+          <SelectControl
+            ariaLabel={copy.classSelectLabel}
+            options={schoolClasses.map((item) => ({ value: item.id, label: item.className }))}
+            value={selectedClass?.id ?? ""}
+            onChange={(value) => {
+              setClassId(value);
+              setStudentId("");
+            }}
+          />
+          <SelectControl
+            ariaLabel={copy.studentSelectLabel}
+            options={students.map((item) => ({ value: item.id, label: item.name }))}
+            value={student?.id ?? ""}
+            onChange={setStudentId}
+          />
           <Button variant="outline" onClick={() => onOpenLeaf("class-reports")}>
             {copy.openReports}
           </Button>
@@ -58,14 +94,14 @@ export function StudentJourneyWorkspace({
           label={copy.metrics.currentStudent}
           value={student?.name ?? "-"}
           detail={`${student?.className ?? "-"} • ${student?.schoolName ?? "-"}`}
-          delta={student?.mentorNote ?? copy.emptyNote}
+          delta={copy.currentMeaning(student?.status ?? "steady")}
           icon={<RouteOutlinedIcon fontSize="inherit" />}
         />
         <DashboardMetricCard
           label={copy.metrics.progress}
           value={`${student?.progressRate ?? 0}%`}
           detail={copy.metrics.progressDetail}
-          delta={copy.metrics.progressDelta}
+          delta={copy.progressMeaning(student?.progressRate ?? 0)}
           icon={<TimelineOutlinedIcon fontSize="inherit" />}
           tone="emerald"
         />
@@ -73,7 +109,7 @@ export function StudentJourneyWorkspace({
           label={copy.metrics.score}
           value={`${student?.averageScore ?? 0}`}
           detail={copy.metrics.scoreDetail}
-          delta={copy.metrics.scoreDelta}
+          delta={copy.scoreMeaning(student?.averageScore ?? 0)}
           icon={<FlagOutlinedIcon fontSize="inherit" />}
           tone="amber"
         />
@@ -87,37 +123,34 @@ export function StudentJourneyWorkspace({
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+        <DashboardSectionCard title={copy.meaningTitle} description={copy.meaningDescription}>
+          <div className="grid gap-3">
+            <MeaningCard title={copy.meaning.nowTitle} body={copy.meaning.nowBody(student?.currentStage ?? "-")} />
+            <MeaningCard title={copy.meaning.riskTitle} body={copy.meaning.riskBody(student?.status ?? "steady")} />
+            <MeaningCard title={copy.meaning.nextTitle} body={journey?.mentorNote ?? copy.emptyNote} />
+          </div>
+        </DashboardSectionCard>
+
         <DashboardSectionCard title={copy.strengthTitle} description={copy.strengthDescription}>
           <div className="space-y-4">
             {journey?.strengths.map((strength) => (
-              <div key={strength.label} className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
+              <div key={strength.label} className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-slate-950">{strength.label}</div>
                   <div className="text-sm font-semibold text-slate-900">{strength.value}%</div>
                 </div>
-                <ProgressBar value={strength.value} className="mt-3 h-2.5 bg-slate-200" indicatorClassName="bg-blue-600" />
+                <ProgressBar value={strength.value} className="mt-3 h-2 bg-white" indicatorClassName="bg-blue-600" />
               </div>
             ))}
-
-            <div className="rounded-[22px] border border-slate-200 bg-white p-4">
-              <div className="text-sm font-semibold text-slate-950">{copy.focusTitle}</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {journey?.focusAreas.map((area) => (
-                  <span key={area} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-700">
-                    {area}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
         </DashboardSectionCard>
 
         <DashboardSectionCard title={copy.timelineTitle} description={copy.timelineDescription}>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {journey?.milestones.map((milestone) => (
               <div key={milestone.id} className="flex gap-4 rounded-[22px] border border-slate-200 bg-white p-4">
-                <div className="relative flex w-10 shrink-0 justify-center">
+                <div className="relative flex w-9 shrink-0 justify-center">
                   <span
                     className={cn(
                       "mt-1 block h-4 w-4 rounded-full",
@@ -131,69 +164,155 @@ export function StudentJourneyWorkspace({
                   <span className="absolute top-5 h-[calc(100%-8px)] w-px bg-slate-200" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-950">{milestone.title}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-950">{milestone.title}</div>
+                    <Badge tone={milestone.state === "done" ? "success" : milestone.state === "current" ? "secondary" : "outline"}>
+                      {copy.milestoneState[milestone.state]}
+                    </Badge>
+                  </div>
                   <div className="mt-1 text-sm leading-6 text-slate-500">{milestone.detail}</div>
                 </div>
               </div>
             ))}
-
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-              <div className="text-sm font-semibold text-slate-950">{copy.mentorTitle}</div>
-              <div className="mt-2 text-sm leading-6 text-slate-500">{journey?.mentorNote}</div>
-            </div>
           </div>
         </DashboardSectionCard>
-      </div>
+
+        <DashboardSectionCard title={copy.focusTitle} description={copy.focusDescription}>
+          <div className="flex flex-wrap gap-2">
+            {journey?.focusAreas.map((area) => (
+              <span key={area} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                {area}
+              </span>
+            ))}
+          </div>
+        </DashboardSectionCard>
+      </section>
     </DashboardPageShell>
   );
 }
 
+function SelectControl({
+  ariaLabel,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+}) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      className="h-11 min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+      onChange={(event) => onChange(event.target.value)}
+      value={value}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function MeaningCard({ body, title }: { body: string; title: string }) {
+  return (
+    <article className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-semibold text-slate-950">{title}</div>
+      <div className="mt-1 text-sm leading-6 text-slate-500">{body}</div>
+    </article>
+  );
+}
+
 const viCopy = {
-  badge: "Learner journey",
+  badge: "Hành trình học viên",
   description:
-    "Hành trình học viên cho giáo viên nhìn rõ hơn điểm mạnh, điểm cần đẩy thêm và các mốc phát triển của từng em thay vì chỉ nhìn một con số tổng kết.",
-  openReports: "Mở bảng thi đua",
+    "Trang này trả lời 3 câu hỏi: học sinh đang ở đâu, điều đó có ý nghĩa gì, và giáo viên nên làm gì tiếp theo.",
+  openReports: "Báo cáo thi đua",
   emptyNote: "Chưa có ghi chú",
+  classSelectLabel: "Chọn lớp",
+  studentSelectLabel: "Chọn học sinh",
   metrics: {
-    currentStudent: "Học sinh đang xem",
+    currentStudent: "Học sinh",
     progress: "Tiến độ hiện tại",
-    progressDetail: "Theo assignment đang chạy gần nhất.",
-    progressDelta: "Dùng để xác định có cần nhắc ngay không",
+    progressDetail: "Theo bài đang học gần nhất.",
     score: "Điểm trung bình",
-    scoreDetail: "Theo các bài đã hoàn thành trong giai đoạn gần đây.",
-    scoreDelta: "Quan sát song song với completion",
+    scoreDetail: "Theo các bài đã hoàn thành gần đây.",
     currentWork: "Bài đang làm",
-    currentWorkDelta: "Phù hợp để giáo viên follow ngay trong lớp",
+    currentWorkDelta: "Dùng để follow ngay trong lớp",
+  },
+  currentMeaning: (status: string) =>
+    status === "support" ? "Đang có dấu hiệu cần kèm sát" : status === "ahead" ? "Có thể giao thêm thử thách" : "Nhịp học ổn định",
+  progressMeaning: (progress: number) =>
+    progress === 0 ? "Cần nhắc mở bài" : progress < 60 ? "Cần checkpoint ngắn" : progress < 100 ? "Đang đi đúng hướng" : "Đã hoàn thành",
+  scoreMeaning: (score: number) => (score >= 90 ? "Năng lực tốt" : score >= 75 ? "Ổn, cần giữ nhịp" : "Cần củng cố nền"),
+  meaningTitle: "Hành trình này nói lên điều gì?",
+  meaningDescription: "Diễn giải dữ liệu thành hành động thay vì chỉ hiển thị số.",
+  meaning: {
+    nowTitle: "Hiện tại",
+    nowBody: (stage: string) => `Học sinh đang ở trạng thái: ${stage}.`,
+    riskTitle: "Rủi ro",
+    riskBody: (status: string) =>
+      status === "support" ? "Nếu không can thiệp, học sinh dễ trễ hạn hoặc mất nhịp học." : "Chưa có rủi ro lớn, nên duy trì nhịp hiện tại.",
+    nextTitle: "Hành động tiếp theo",
   },
   strengthTitle: "Bản đồ năng lực",
-  strengthDescription: "Hiển thị các trụ cột đang mạnh để giáo viên giao thêm nhiệm vụ đúng hướng.",
-  focusTitle: "Điểm cần tiếp tục kéo",
+  strengthDescription: "Các trụ cột đang mạnh để giao bài hoặc thử thách phù hợp.",
   timelineTitle: "Mốc phát triển",
-  timelineDescription: "Theo dõi các mốc đã đạt, đang bám và mục tiêu kế tiếp của học viên.",
-  mentorTitle: "Ghi chú mentor",
+  timelineDescription: "Đã đạt, đang theo đuổi và mục tiêu kế tiếp.",
+  focusTitle: "Điểm cần kéo tiếp",
+  focusDescription: "Những vùng giáo viên nên ưu tiên trong lần giao bài tiếp theo.",
+  milestoneState: {
+    done: "Đã đạt",
+    current: "Đang làm",
+    next: "Tiếp theo",
+  },
 };
 
 const enCopy = {
   badge: "Learner journey",
   description:
-    "The learner journey helps teachers see strengths, growth opportunities, and milestone progress for each student instead of relying on one summary score.",
-  openReports: "Open leaderboard",
+    "This page answers three questions: where the learner is, what it means, and what the teacher should do next.",
+  openReports: "Competition report",
   emptyNote: "No note yet",
+  classSelectLabel: "Select class",
+  studentSelectLabel: "Select student",
   metrics: {
-    currentStudent: "Current learner",
+    currentStudent: "Learner",
     progress: "Current progress",
-    progressDetail: "Based on the most recent live assignment.",
-    progressDelta: "Useful for deciding whether to nudge now",
+    progressDetail: "Based on the latest live assignment.",
     score: "Average score",
-    scoreDetail: "Based on recently completed work.",
-    scoreDelta: "Review alongside completion",
+    scoreDetail: "Based on recent completed work.",
     currentWork: "Current assignment",
     currentWorkDelta: "Useful for in-class follow-up",
   },
+  currentMeaning: (status: string) =>
+    status === "support" ? "Needs closer coaching" : status === "ahead" ? "Ready for a richer challenge" : "Learning rhythm is stable",
+  progressMeaning: (progress: number) =>
+    progress === 0 ? "Needs an opening reminder" : progress < 60 ? "Needs a short checkpoint" : progress < 100 ? "Moving correctly" : "Completed",
+  scoreMeaning: (score: number) => (score >= 90 ? "Strong mastery" : score >= 75 ? "Stable, keep rhythm" : "Needs foundation work"),
+  meaningTitle: "What does this journey say?",
+  meaningDescription: "Turns raw data into teacher action.",
+  meaning: {
+    nowTitle: "Current state",
+    nowBody: (stage: string) => `The learner is currently at: ${stage}.`,
+    riskTitle: "Risk",
+    riskBody: (status: string) =>
+      status === "support" ? "Without intervention, the learner may miss deadlines or lose rhythm." : "No major risk; protect the current rhythm.",
+    nextTitle: "Next action",
+  },
   strengthTitle: "Strength map",
-  strengthDescription: "Shows where the student is strongest so teachers can assign richer work with more precision.",
-  focusTitle: "Areas to keep pushing",
+  strengthDescription: "Strong pillars that can guide richer work and better assignments.",
   timelineTitle: "Growth milestones",
-  timelineDescription: "Track what has been achieved, what is being chased now, and what comes next.",
-  mentorTitle: "Mentor note",
+  timelineDescription: "What is done, what is current, and what comes next.",
+  focusTitle: "Focus areas",
+  focusDescription: "Areas to prioritize in the next assignment cycle.",
+  milestoneState: {
+    done: "Done",
+    current: "Current",
+    next: "Next",
+  },
 };

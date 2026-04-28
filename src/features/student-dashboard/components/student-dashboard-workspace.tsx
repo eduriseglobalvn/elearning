@@ -1,16 +1,15 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import AccountCircleOutlinedIcon from "@mui/icons-material/AccountCircleOutlined";
 import ArrowBackOutlinedIcon from "@mui/icons-material/ArrowBackOutlined";
-import ArrowForwardOutlinedIcon from "@mui/icons-material/ArrowForwardOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
-import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
-import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
-import QueryBuilderOutlinedIcon from "@mui/icons-material/QueryBuilderOutlined";
+import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 
@@ -20,15 +19,19 @@ import { getCurrentAccount, logoutAccount } from "@/features/auth/api/auth-stora
 import type { TeacherAccount } from "@/features/auth/types/auth-types";
 import { useI18n } from "@/features/i18n";
 import {
-  classLeaderboard,
-  gradeLeaderboard,
   studentAssignments,
   studentDashboardProfile,
+  studentDiscussionThreads,
+  studentTeacherAnnouncements,
 } from "@/features/student-dashboard/api/mock-student-dashboard";
+import profanityWords from "@/features/student-dashboard/config/profanity-words.json";
 import type {
+  StudentAssignmentAttempt,
   StudentAssignmentStatus,
   StudentDashboardAssignment,
-  StudentLeaderboardEntry,
+  StudentDiscussionImageAttachment,
+  StudentDiscussionThread,
+  StudentTeacherAnnouncement,
 } from "@/features/student-dashboard/types/student-dashboard-types";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +42,20 @@ type StudentViewState =
       assignmentId: string;
     };
 
-type StudentPageKey = "overview" | "assignments" | "ranking" | "account";
+type StudentPageKey = "overview" | "assignments" | "scores" | "discussion" | "announcements" | "account";
+
+type DiscussionScrollTarget = {
+  replyId?: string;
+  threadId: string;
+};
+
+type StudentDiscussionNotification = DiscussionScrollTarget & {
+  id: string;
+  primaryText: string;
+  secondaryText: string;
+  timeLabel: string;
+  unread: boolean;
+};
 
 type DashboardCopy = {
   navItems: Array<{ key: StudentPageKey; label: string; icon: ReactNode }>;
@@ -52,8 +68,7 @@ type DashboardCopy = {
     open: string;
     overdue: string;
     average: string;
-    classRank: string;
-    gradeRank: string;
+    completed: string;
   };
   priority: {
     title: string;
@@ -63,10 +78,44 @@ type DashboardCopy = {
   todayTitle: string;
   assignmentsTitle: string;
   assignmentsDescription: string;
-  rankingTitle: string;
-  rankingDescription: string;
-  classRankingTitle: string;
-  gradeRankingTitle: string;
+  scoresTitle: string;
+  scoresDescription: string;
+  bestScoreLabel: string;
+  recentResultsTitle: string;
+  noRecentResults: string;
+  attemptDurationLabel: string;
+  discussionTitle: string;
+  discussionDescription: string;
+  discussionComposerTitle: string;
+  discussionTitlePlaceholder: string;
+  discussionBodyPlaceholder: string;
+  discussionAttachmentAction: string;
+  discussionAttachmentHint: string;
+  discussionRemoveAttachment: string;
+  discussionModerationWarning: string;
+  discussionPostAction: string;
+  discussionReplyPlaceholder: string;
+  discussionReplyAction: string;
+  discussionRepliesLabel: (count: number) => string;
+  discussionResolvedLabel: string;
+  discussionRelatedLabel: string;
+  discussionEmptyTitle: string;
+  discussionEmptyDescription: string;
+  discussionPageLabel: (page: number, totalPages: number) => string;
+  discussionPreviousPage: string;
+  discussionNextPage: string;
+  announcementTitle: string;
+  announcementDescription: string;
+  announcementHeroTitle: string;
+  announcementHeroEmpty: string;
+  announcementPinnedLabel: string;
+  notificationTitle: string;
+  notificationEmpty: string;
+  notificationNewTopicLabel: string;
+  notificationImageOnly: string;
+  notificationNewThread: (authorName: string) => string;
+  notificationNewReply: (authorName: string) => string;
+  notificationTopicContext: (title: string) => string;
   accountTitle: string;
   accountDescription: string;
   learningProfileTitle: string;
@@ -78,8 +127,6 @@ type DashboardCopy = {
   scoreBadge: (score: number, maxScore: number) => string;
   pendingScore: string;
   assignmentAction: (status: StudentAssignmentStatus) => string;
-  chartScoreLabel: string;
-  youBadge: string;
   signedInAs: string;
   guestLabel: string;
   signIn: string;
@@ -99,6 +146,11 @@ export function StudentDashboardWorkspace() {
   const [activePage, setActivePage] = useState<StudentPageKey>("overview");
   const [viewState, setViewState] = useState<StudentViewState>({ type: "dashboard" });
   const [account, setAccount] = useState<TeacherAccount | null>(() => getCurrentAccount());
+  const [discussionThreads, setDiscussionThreads] = useState<StudentDiscussionThread[]>(studentDiscussionThreads);
+  const [discussionNotifications, setDiscussionNotifications] = useState<StudentDiscussionNotification[]>(() =>
+    createInitialDiscussionNotifications(studentDiscussionThreads, locale),
+  );
+  const [discussionScrollTarget, setDiscussionScrollTarget] = useState<DiscussionScrollTarget | null>(null);
 
   const assignments = studentAssignments;
   const currentAssignment =
@@ -113,6 +165,8 @@ export function StudentDashboardWorkspace() {
       Math.max(completedAssignments.length, 1),
   );
   const priorityAssignment = openAssignments[0] ?? assignments[0];
+  const teacherAnnouncements = studentTeacherAnnouncements;
+  const pinnedAnnouncement = teacherAnnouncements.find((announcement) => announcement.isPinned) ?? teacherAnnouncements[0];
 
   function openAssignment(assignmentId: string) {
     setViewState({ type: "quiz", assignmentId });
@@ -128,6 +182,101 @@ export function StudentDashboardWorkspace() {
     navigate("/");
   }
 
+  function createDiscussionThread({
+    attachments,
+    content,
+    title,
+  }: {
+    attachments: StudentDiscussionImageAttachment[];
+    content: string;
+    title: string;
+  }) {
+    const now = Date.now();
+    const safeTitle = maskProfanity(title);
+    const safeContent = maskProfanity(content);
+    const threadId = `discussion-${now}`;
+    const nextThread: StudentDiscussionThread = {
+      id: threadId,
+      title: safeTitle.value,
+      content: safeContent.value,
+      authorName: studentDashboardProfile.name,
+      authorInitials: getInitials(studentDashboardProfile.name),
+      createdAtLabel: locale === "vi" ? "Vừa xong" : "Just now",
+      createdAtMs: now,
+      className: studentDashboardProfile.className,
+      isResolved: false,
+      attachments,
+      moderationWarning: safeTitle.hasProfanity || safeContent.hasProfanity,
+      replies: [],
+    };
+
+    setDiscussionThreads((currentThreads) => [nextThread, ...currentThreads]);
+    pushDiscussionNotification({
+      id: `notification-${threadId}`,
+      primaryText: copy.notificationNewThread(nextThread.authorName),
+      secondaryText: nextThread.title,
+      replyId: undefined,
+      threadId,
+      timeLabel: locale === "vi" ? "Vừa xong" : "Just now",
+      unread: true,
+    });
+  }
+
+  function replyToDiscussionThread(threadId: string, content: string, attachments: StudentDiscussionImageAttachment[]) {
+    const now = Date.now();
+    const safeContent = maskProfanity(content);
+    const replyId = `reply-${threadId}-${now}`;
+    const threadTitle = discussionThreads.find((thread) => thread.id === threadId)?.title ?? copy.discussionTitle;
+
+    setDiscussionThreads((currentThreads) =>
+      currentThreads.map((thread) =>
+        thread.id === threadId
+          ? {
+              ...thread,
+              replies: [
+                ...thread.replies,
+                {
+                  id: replyId,
+                  authorName: studentDashboardProfile.name,
+                  authorInitials: getInitials(studentDashboardProfile.name),
+                  createdAtLabel: locale === "vi" ? "Vừa xong" : "Just now",
+                  createdAtMs: now,
+                  content: safeContent.value,
+                  attachments,
+                  moderationWarning: safeContent.hasProfanity,
+                },
+              ],
+            }
+          : thread,
+      ),
+    );
+    pushDiscussionNotification({
+      id: `notification-${replyId}`,
+      primaryText: copy.notificationNewReply(studentDashboardProfile.name),
+      secondaryText: copy.notificationTopicContext(threadTitle),
+      replyId,
+      threadId,
+      timeLabel: locale === "vi" ? "Vừa xong" : "Just now",
+      unread: true,
+    });
+  }
+
+  function pushDiscussionNotification(notification: StudentDiscussionNotification) {
+    setDiscussionNotifications((currentNotifications) => [notification, ...currentNotifications].slice(0, 8));
+  }
+
+  function handleDiscussionNotificationClick(target: DiscussionScrollTarget) {
+    setActivePage("discussion");
+    setDiscussionScrollTarget(target);
+    setDiscussionNotifications((currentNotifications) =>
+      currentNotifications.map((notification) =>
+        notification.threadId === target.threadId && notification.replyId === target.replyId
+          ? { ...notification, unread: false }
+          : notification,
+      ),
+    );
+  }
+
   if (viewState.type === "quiz" && currentAssignment) {
     return (
       <main className="min-h-screen bg-[#f7f8fb]">
@@ -135,8 +284,10 @@ export function StudentDashboardWorkspace() {
           activePage={activePage}
           account={account}
           copy={copy}
+          notifications={discussionNotifications}
           studentName={studentDashboardProfile.name}
           studentClass={studentDashboardProfile.className}
+          onNotificationClick={handleDiscussionNotificationClick}
           onPageChange={(nextPage) => {
             setActivePage(nextPage);
             setViewState({ type: "dashboard" });
@@ -144,28 +295,21 @@ export function StudentDashboardWorkspace() {
           onSignIn={handleSignIn}
           onSignOut={handleSignOut}
         />
-        <BrandDivider />
 
         <section className="border-b border-slate-200 bg-white">
-          <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-5">
+          <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-4 px-4 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
-                <div className="flex items-center gap-3">
-                  <span className="h-px w-10 bg-[var(--erg-red)]" />
-                  <span className="text-xs font-semibold uppercase text-[var(--erg-red)]">
-                    {copy.sessionEyebrow}
-                  </span>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge className="border-[var(--erg-blue)]/10 bg-[var(--erg-blue)]/5 text-[var(--erg-blue)]" tone="outline">
                     {copy.sessionBadge}
                   </Badge>
                   <StatusPill status={currentAssignment.status} label={currentAssignment.statusLabel} />
                 </div>
-                <h1 className="mt-4 max-w-5xl text-4xl font-semibold leading-tight text-[var(--erg-blue)]">
+                <h1 className="mt-3 max-w-4xl text-2xl font-semibold leading-tight text-[var(--erg-blue)]">
                   {currentAssignment.title}
                 </h1>
-                <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-600">
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
                   {copy.sessionDescription(
                     currentAssignment.subjectLabel,
                     currentAssignment.teacherName,
@@ -186,7 +330,7 @@ export function StudentDashboardWorkspace() {
           </div>
         </section>
 
-        <div className="mx-auto w-full max-w-[1600px] px-3 py-5">
+        <div className="mx-auto w-full max-w-[1480px] px-3 py-4">
           <PlayerShell quizId={currentAssignment.quizId} />
         </div>
       </main>
@@ -194,28 +338,27 @@ export function StudentDashboardWorkspace() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
+    <main className="min-h-screen bg-[#f8fafc] text-slate-950">
       <StudentBrandHeader
         activePage={activePage}
         account={account}
         copy={copy}
+        notifications={discussionNotifications}
         studentName={studentDashboardProfile.name}
         studentClass={studentDashboardProfile.className}
+        onNotificationClick={handleDiscussionNotificationClick}
         onPageChange={setActivePage}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
       />
-      <BrandDivider />
 
       {activePage === "overview" ? (
         <OverviewView
-          averageAssignmentScore={averageAssignmentScore}
-          completedAssignments={completedAssignments}
           copy={copy}
+          announcement={pinnedAnnouncement}
           onOpenAssignment={openAssignment}
           onPageChange={setActivePage}
           openAssignments={openAssignments}
-          overdueAssignments={overdueAssignments}
           priorityAssignment={priorityAssignment}
         />
       ) : null}
@@ -231,8 +374,27 @@ export function StudentDashboardWorkspace() {
         />
       ) : null}
 
-      {activePage === "ranking" ? (
-        <RankingView copy={copy} />
+      {activePage === "scores" ? (
+        <ScoresView assignments={assignments} copy={copy} />
+      ) : null}
+
+      {activePage === "discussion" ? (
+        <DiscussionView
+          copy={copy}
+          scrollTarget={discussionScrollTarget}
+          studentName={studentDashboardProfile.name}
+          threads={discussionThreads}
+          onCreateThread={createDiscussionThread}
+          onScrollHandled={() => setDiscussionScrollTarget(null)}
+          onReply={replyToDiscussionThread}
+        />
+      ) : null}
+
+      {activePage === "announcements" ? (
+        <AnnouncementsView
+          announcements={teacherAnnouncements}
+          copy={copy}
+        />
       ) : null}
 
       {activePage === "account" ? (
@@ -252,106 +414,102 @@ export function StudentDashboardWorkspace() {
 }
 
 function OverviewView({
-  averageAssignmentScore,
-  completedAssignments,
+  announcement,
   copy,
   onOpenAssignment,
   onPageChange,
   openAssignments,
-  overdueAssignments,
   priorityAssignment,
 }: {
-  averageAssignmentScore: number;
-  completedAssignments: StudentDashboardAssignment[];
+  announcement: StudentTeacherAnnouncement | undefined;
   copy: DashboardCopy;
   onOpenAssignment: (assignmentId: string) => void;
   onPageChange: (page: StudentPageKey) => void;
   openAssignments: StudentDashboardAssignment[];
-  overdueAssignments: StudentDashboardAssignment[];
   priorityAssignment: StudentDashboardAssignment;
 }) {
   return (
-    <>
-      <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto grid max-w-[1280px] gap-8 px-4 py-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <span className="h-px w-10 bg-[var(--erg-red)]" />
-              <span className="text-xs font-semibold uppercase text-[var(--erg-red)]">{copy.heroEyebrow}</span>
-            </div>
-            <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight text-[var(--erg-blue)] sm:text-5xl">
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-500">{copy.heroEyebrow}</div>
+            <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--erg-blue)] sm:text-3xl">
               {copy.heroTitle(studentDashboardProfile.name)}
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-slate-600">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               {copy.heroDescription(priorityAssignment.title)}
             </p>
-
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Button
-                className="bg-[var(--erg-blue)] px-5 text-white hover:bg-[#060b7a]"
-                onClick={() => onOpenAssignment(priorityAssignment.id)}
-              >
-                {copy.primaryAction}
-              </Button>
-              <Button
-                variant="outline"
-                className="border-slate-200 bg-white text-[var(--erg-blue)] hover:bg-slate-50"
-                onClick={() => onPageChange("assignments")}
-              >
-                {copy.secondaryAction}
-                <ArrowForwardOutlinedIcon fontSize="inherit" />
-              </Button>
-            </div>
           </div>
 
-          <PriorityPanel
-            assignment={priorityAssignment}
-            copy={copy}
-            onOpen={() => onOpenAssignment(priorityAssignment.id)}
-          />
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              className="bg-[var(--erg-blue)] px-4 text-white hover:bg-[#060b7a]"
+              onClick={() => onOpenAssignment(priorityAssignment.id)}
+            >
+              {copy.primaryAction}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-slate-200 bg-white text-[var(--erg-blue)] hover:bg-slate-50"
+              onClick={() => onPageChange("assignments")}
+            >
+              {copy.secondaryAction}
+            </Button>
+          </div>
         </div>
-      </section>
 
-      <section className="mx-auto max-w-[1280px] px-4 py-8">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon={<MenuBookOutlinedIcon fontSize="inherit" />} label={copy.stats.open} value={`${openAssignments.length}`} />
-          <MetricCard icon={<QueryBuilderOutlinedIcon fontSize="inherit" />} label={copy.stats.overdue} value={`${overdueAssignments.length}`} tone="danger" />
-          <MetricCard icon={<SchoolOutlinedIcon fontSize="inherit" />} label={copy.stats.average} value={`${averageAssignmentScore}`} />
-          <MetricCard icon={<BarChartOutlinedIcon fontSize="inherit" />} label={copy.stats.classRank} value={`#${studentDashboardProfile.classRank}`} />
+        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {announcement?.isPinned ? <CompactBadge>{copy.announcementPinnedLabel}</CompactBadge> : null}
+                <CompactBadge>{announcement?.targetLabel ?? studentDashboardProfile.className}</CompactBadge>
+              </div>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--erg-blue)]">
+                {announcement?.title ?? copy.announcementHeroTitle}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                {announcement?.content ?? copy.announcementHeroEmpty}
+              </p>
+              {announcement ? (
+                <div className="mt-2 text-xs font-semibold text-slate-500">
+                  {announcement.teacherName} • {announcement.createdAtLabel}
+                </div>
+              ) : null}
+            </div>
+
+            <Button
+              variant="outline"
+              className="shrink-0 border-slate-200 bg-white text-[var(--erg-blue)] hover:bg-slate-50"
+              onClick={() => onPageChange("announcements")}
+            >
+              {copy.announcementTitle}
+            </Button>
+          </div>
         </div>
+      </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="rounded-lg border border-slate-200 bg-white">
-            <SectionHeader
-              actionLabel={copy.secondaryAction}
-              onAction={() => onPageChange("assignments")}
-              title={copy.todayTitle}
+      <section className="mt-4 rounded-xl border border-slate-200 bg-white">
+        <SectionHeader
+          actionLabel={copy.secondaryAction}
+          onAction={() => onPageChange("assignments")}
+          title={copy.todayTitle}
+        />
+        <div className="grid gap-2 p-3">
+          {openAssignments.slice(0, 3).map((assignment) => (
+            <AssignmentCard
+              key={assignment.id}
+              assignment={assignment}
+              compact
+              copy={copy}
+              onOpen={() => onOpenAssignment(assignment.id)}
             />
-            <div className="grid gap-3 p-4">
-              {openAssignments.slice(0, 3).map((assignment) => (
-                <AssignmentCard
-                  key={assignment.id}
-                  assignment={assignment}
-                  compact
-                  copy={copy}
-                  onOpen={() => onOpenAssignment(assignment.id)}
-                />
-              ))}
-            </div>
-          </section>
-
-          <QuickRankingCard copy={copy} entries={classLeaderboard} onOpen={() => onPageChange("ranking")} />
-        </div>
-
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <ProfileStat label={copy.stats.gradeRank} value={`#${studentDashboardProfile.gradeRank}`} />
-            <ProfileStat label={copy.stats.average} value={`${averageAssignmentScore}`} />
-            <ProfileStat label={copy.assignmentsTitle} value={`${completedAssignments.length}/${studentDashboardProfile.totalAssignments}`} />
-          </div>
+          ))}
         </div>
       </section>
-    </>
+
+    </section>
   );
 }
 
@@ -371,20 +529,20 @@ function AssignmentsView({
   overdueAssignments: StudentDashboardAssignment[];
 }) {
   return (
-    <section className="mx-auto max-w-[1280px] px-4 py-8">
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
       <PageTitle
         description={copy.assignmentsDescription}
         icon={<AssignmentTurnedInOutlinedIcon fontSize="inherit" />}
         title={copy.assignmentsTitle}
       />
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ProfileStat label={copy.stats.open} value={`${openAssignments.length}`} />
         <ProfileStat label={copy.stats.overdue} value={`${overdueAssignments.length}`} tone="danger" />
         <ProfileStat label={copy.stats.average} value={`${completedAssignments.length}/${assignments.length}`} />
       </div>
 
-      <div className="mt-6 grid gap-4">
+      <div className="mt-4 grid gap-3">
         {assignments.map((assignment) => (
           <AssignmentCard
             key={assignment.id}
@@ -398,20 +556,487 @@ function AssignmentsView({
   );
 }
 
-function RankingView({ copy }: { copy: DashboardCopy }) {
+function ScoresView({ assignments, copy }: { assignments: StudentDashboardAssignment[]; copy: DashboardCopy }) {
+  const attemptedAssignments = assignments.filter((assignment) => assignment.attempts.length > 0);
+
   return (
-    <section className="mx-auto max-w-[1280px] px-4 py-8">
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
       <PageTitle
-        description={copy.rankingDescription}
-        icon={<BarChartOutlinedIcon fontSize="inherit" />}
-        title={copy.rankingTitle}
+        description={copy.scoresDescription}
+        icon={<AssignmentTurnedInOutlinedIcon fontSize="inherit" />}
+        title={copy.scoresTitle}
       />
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <RankingPanel copy={copy} entries={classLeaderboard} title={copy.classRankingTitle} />
-        <RankingPanel copy={copy} entries={gradeLeaderboard} title={copy.gradeRankingTitle} />
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {attemptedAssignments.map((assignment) => (
+          <AssignmentScoreCard key={assignment.id} assignment={assignment} copy={copy} />
+        ))}
       </div>
     </section>
+  );
+}
+
+function DiscussionView({
+  copy,
+  scrollTarget,
+  studentName,
+  threads,
+  onCreateThread,
+  onScrollHandled,
+  onReply,
+}: {
+  copy: DashboardCopy;
+  scrollTarget: DiscussionScrollTarget | null;
+  studentName: string;
+  threads: StudentDiscussionThread[];
+  onCreateThread: (thread: { attachments: StudentDiscussionImageAttachment[]; content: string; title: string }) => void;
+  onScrollHandled: () => void;
+  onReply: (threadId: string, content: string, attachments: StudentDiscussionImageAttachment[]) => void;
+}) {
+  const discussionPageSize = 3;
+  const [threadTitle, setThreadTitle] = useState("");
+  const [threadContent, setThreadContent] = useState("");
+  const [threadAttachments, setThreadAttachments] = useState<StudentDiscussionImageAttachment[]>([]);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyAttachments, setReplyAttachments] = useState<Record<string, StudentDiscussionImageAttachment[]>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [highlightedTarget, setHighlightedTarget] = useState<DiscussionScrollTarget | null>(null);
+  const sortedThreads = useMemo(
+    () => [...threads].sort((left, right) => getThreadActivityMs(right) - getThreadActivityMs(left)),
+    [threads],
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedThreads.length / discussionPageSize));
+  const visibleThreads = sortedThreads.slice((currentPage - 1) * discussionPageSize, currentPage * discussionPageSize);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!scrollTarget) {
+      return;
+    }
+
+    const targetThreadIndex = sortedThreads.findIndex((thread) => thread.id === scrollTarget.threadId);
+    if (targetThreadIndex < 0) {
+      return;
+    }
+
+    const nextPage = Math.floor(targetThreadIndex / discussionPageSize) + 1;
+    setCurrentPage(nextPage);
+    setHighlightedTarget(scrollTarget);
+
+    window.setTimeout(() => {
+      const targetId = scrollTarget.replyId
+        ? getDiscussionReplyDomId(scrollTarget.replyId)
+        : getDiscussionThreadDomId(scrollTarget.threadId);
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      onScrollHandled();
+    }, 80);
+
+    const highlightTimer = window.setTimeout(() => setHighlightedTarget(null), 2400);
+    return () => window.clearTimeout(highlightTimer);
+  }, [onScrollHandled, scrollTarget, sortedThreads]);
+
+  function handleCreateThread(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextTitle = threadTitle.trim();
+    const nextContent = threadContent.trim();
+    if (!nextTitle || (!nextContent && threadAttachments.length === 0)) {
+      return;
+    }
+
+    onCreateThread({
+      attachments: threadAttachments,
+      title: nextTitle,
+      content: nextContent,
+    });
+    setThreadTitle("");
+    setThreadContent("");
+    setThreadAttachments([]);
+  }
+
+  function handleReply(threadId: string) {
+    const nextReply = replyDrafts[threadId]?.trim();
+    const nextAttachments = replyAttachments[threadId] ?? [];
+    if (!nextReply && nextAttachments.length === 0) {
+      return;
+    }
+
+    onReply(threadId, nextReply, nextAttachments);
+    setReplyDrafts((currentDrafts) => ({ ...currentDrafts, [threadId]: "" }));
+    setReplyAttachments((currentAttachments) => ({ ...currentAttachments, [threadId]: [] }));
+  }
+
+  async function handleThreadAttachmentChange(files: FileList | null) {
+    const nextAttachments = await createImageAttachments(files);
+    setThreadAttachments((currentAttachments) => [...currentAttachments, ...nextAttachments]);
+  }
+
+  async function handleReplyAttachmentChange(threadId: string, files: FileList | null) {
+    const nextAttachments = await createImageAttachments(files);
+    setReplyAttachments((currentAttachments) => ({
+      ...currentAttachments,
+      [threadId]: [...(currentAttachments[threadId] ?? []), ...nextAttachments],
+    }));
+  }
+
+  return (
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
+      <PageTitle
+        description={copy.discussionDescription}
+        icon={<ForumOutlinedIcon fontSize="inherit" />}
+        title={copy.discussionTitle}
+      />
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <form className="rounded-xl border border-slate-200 bg-white p-4" onSubmit={handleCreateThread}>
+          <div className="flex items-center gap-3">
+            <Avatar initials={getInitials(studentName)} />
+            <div>
+              <h2 className="text-base font-semibold text-[var(--erg-blue)]">{copy.discussionComposerTitle}</h2>
+              <p className="mt-0.5 text-xs text-slate-500">{studentName}</p>
+            </div>
+          </div>
+
+          <input
+            className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--erg-blue)] focus:ring-2 focus:ring-[var(--erg-blue)]/10"
+            placeholder={copy.discussionTitlePlaceholder}
+            value={threadTitle}
+            onChange={(event) => setThreadTitle(event.target.value)}
+          />
+
+          <textarea
+            className="mt-3 min-h-[132px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-[var(--erg-blue)] focus:ring-2 focus:ring-[var(--erg-blue)]/10"
+            placeholder={copy.discussionBodyPlaceholder}
+            value={threadContent}
+            onChange={(event) => setThreadContent(event.target.value)}
+          />
+
+          <AttachmentPicker
+            attachments={threadAttachments}
+            buttonLabel={copy.discussionAttachmentAction}
+            hint={copy.discussionAttachmentHint}
+            inputId="discussion-thread-images"
+            removeLabel={copy.discussionRemoveAttachment}
+            onChange={handleThreadAttachmentChange}
+            onRemove={(attachmentId) =>
+              setThreadAttachments((currentAttachments) =>
+                currentAttachments.filter((attachment) => attachment.id !== attachmentId),
+              )
+            }
+          />
+
+          <Button className="mt-3 w-full bg-[var(--erg-blue)] text-white hover:bg-[#060b7a]" type="submit">
+            {copy.discussionPostAction}
+          </Button>
+        </form>
+
+        <div className="min-h-0">
+          <div className="max-h-[720px] overflow-y-auto pr-2">
+          <div className="grid gap-3">
+          {visibleThreads.length > 0 ? (
+            visibleThreads.map((thread) => {
+              const sortedReplies = [...thread.replies].sort((left, right) => right.createdAtMs - left.createdAtMs);
+
+              return (
+              <article
+                key={thread.id}
+                className={cn(
+                  "scroll-mt-28 rounded-xl border p-4 transition-colors duration-500",
+                  highlightedTarget?.threadId === thread.id && !highlightedTarget.replyId
+                    ? "border-amber-200 bg-amber-50/70"
+                    : "border-slate-200 bg-white",
+                )}
+                id={getDiscussionThreadDomId(thread.id)}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <Avatar initials={thread.authorInitials} />
+                      <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CompactBadge>{thread.className}</CompactBadge>
+                        {thread.isResolved ? (
+                          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase text-emerald-700">
+                            {copy.discussionResolvedLabel}
+                          </span>
+                        ) : null}
+                      </div>
+                      <h2 className="mt-2 text-lg font-semibold leading-snug text-[var(--erg-blue)]">{thread.title}</h2>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{thread.content}</p>
+                      {thread.moderationWarning ? <ModerationNotice copy={copy} /> : null}
+                      <ImageAttachmentGrid attachments={thread.attachments} />
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span className="font-semibold text-slate-700">{thread.authorName}</span>
+                        <span>{thread.createdAtLabel}</span>
+                        {thread.relatedAssignmentTitle ? (
+                          <span>
+                            {copy.discussionRelatedLabel}: {thread.relatedAssignmentTitle}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 rounded-lg bg-slate-50 px-3 py-2 text-center">
+                    <div className="text-lg font-semibold text-[var(--erg-blue)]">{thread.replies.length}</div>
+                    <div className="text-xs font-semibold uppercase text-slate-400">
+                      {copy.discussionRepliesLabel(thread.replies.length)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                  {sortedReplies.slice(0, 3).map((reply) => (
+                    <div
+                      key={reply.id}
+                      className={cn(
+                        "scroll-mt-28 flex gap-3 rounded-lg p-3 transition-colors duration-500",
+                        highlightedTarget?.replyId === reply.id ? "bg-amber-50 ring-1 ring-amber-200" : "bg-slate-50",
+                      )}
+                      id={getDiscussionReplyDomId(reply.id)}
+                    >
+                      <Avatar initials={reply.authorInitials} size="sm" />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="font-semibold text-slate-900">{reply.authorName}</span>
+                          <span className="text-slate-500">{reply.createdAtLabel}</span>
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{reply.content}</p>
+                        {reply.moderationWarning ? <ModerationNotice copy={copy} /> : null}
+                        <ImageAttachmentGrid attachments={reply.attachments} compact />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <div className="min-w-0 flex-1">
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--erg-blue)] focus:ring-2 focus:ring-[var(--erg-blue)]/10"
+                      placeholder={copy.discussionReplyPlaceholder}
+                      value={replyDrafts[thread.id] ?? ""}
+                      onChange={(event) =>
+                        setReplyDrafts((currentDrafts) => ({
+                          ...currentDrafts,
+                          [thread.id]: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          handleReply(thread.id);
+                        }
+                      }}
+                    />
+                    <AttachmentPicker
+                      attachments={replyAttachments[thread.id] ?? []}
+                      buttonLabel={copy.discussionAttachmentAction}
+                      hint={copy.discussionAttachmentHint}
+                      inputId={`discussion-reply-images-${thread.id}`}
+                      removeLabel={copy.discussionRemoveAttachment}
+                      onChange={(files) => handleReplyAttachmentChange(thread.id, files)}
+                      onRemove={(attachmentId) =>
+                        setReplyAttachments((currentAttachments) => ({
+                          ...currentAttachments,
+                          [thread.id]: (currentAttachments[thread.id] ?? []).filter(
+                            (attachment) => attachment.id !== attachmentId,
+                          ),
+                        }))
+                      }
+                    />
+                  </div>
+                  <Button
+                    className="bg-[var(--erg-blue)] px-4 text-white hover:bg-[#060b7a] sm:self-start"
+                    type="button"
+                    onClick={() => handleReply(thread.id)}
+                  >
+                    {copy.discussionReplyAction}
+                  </Button>
+                </div>
+              </article>
+              );
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
+              <h2 className="text-lg font-semibold text-[var(--erg-blue)]">{copy.discussionEmptyTitle}</h2>
+              <p className="mt-2 text-sm text-slate-500">{copy.discussionEmptyDescription}</p>
+            </div>
+          )}
+          </div>
+          </div>
+
+          {totalPages > 1 ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <Button
+                variant="outline"
+                className="border-slate-200 bg-white text-[var(--erg-blue)] hover:bg-slate-50"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              >
+                {copy.discussionPreviousPage}
+              </Button>
+              <div className="text-sm font-semibold text-slate-500">
+                {copy.discussionPageLabel(currentPage, totalPages)}
+              </div>
+              <Button
+                variant="outline"
+                className="border-slate-200 bg-white text-[var(--erg-blue)] hover:bg-slate-50"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              >
+                {copy.discussionNextPage}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AnnouncementsView({
+  announcements,
+  copy,
+}: {
+  announcements: StudentTeacherAnnouncement[];
+  copy: DashboardCopy;
+}) {
+  return (
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
+      <PageTitle
+        description={copy.announcementDescription}
+        icon={<NotificationsNoneOutlinedIcon fontSize="inherit" />}
+        title={copy.announcementTitle}
+      />
+
+      <div className="mt-4 grid gap-3">
+        {announcements.map((announcement) => (
+          <article
+            key={announcement.id}
+            className="rounded-xl border border-slate-200 bg-white p-4"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  {announcement.isPinned ? <CompactBadge>{copy.announcementPinnedLabel}</CompactBadge> : null}
+                  <CompactBadge>{announcement.targetLabel}</CompactBadge>
+                </div>
+                <h2 className="mt-2 text-lg font-semibold text-[var(--erg-blue)]">{announcement.title}</h2>
+                <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">{announcement.content}</p>
+              </div>
+              <div className="shrink-0 rounded-lg bg-slate-50 px-3 py-2 text-right text-xs text-slate-500">
+                <div className="font-semibold text-slate-700">{announcement.teacherName}</div>
+                <div className="mt-1">{announcement.createdAtLabel}</div>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AttachmentPicker({
+  attachments,
+  buttonLabel,
+  hint,
+  inputId,
+  removeLabel,
+  onChange,
+  onRemove,
+}: {
+  attachments: StudentDiscussionImageAttachment[];
+  buttonLabel: string;
+  hint: string;
+  inputId: string;
+  removeLabel: string;
+  onChange: (files: FileList | null) => void;
+  onRemove: (attachmentId: string) => void;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label
+          className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-[var(--erg-blue)] transition hover:bg-slate-50"
+          htmlFor={inputId}
+        >
+          <ImageOutlinedIcon fontSize="small" />
+          {buttonLabel}
+        </label>
+        <input
+          accept="image/*"
+          className="sr-only"
+          id={inputId}
+          multiple
+          type="file"
+          onChange={(event) => {
+            onChange(event.target.files);
+            event.target.value = "";
+          }}
+        />
+        <span className="text-xs text-slate-500">{hint}</span>
+      </div>
+
+      {attachments.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {attachments.map((attachment) => (
+            <div key={attachment.id} className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+              <img alt={attachment.name} className="h-full w-full object-cover" src={attachment.url} />
+              <button
+                type="button"
+                className="absolute inset-x-1 bottom-1 rounded-md bg-white/95 px-2 py-1 text-[11px] font-semibold text-[var(--erg-red)] opacity-0 shadow-sm transition group-hover:opacity-100"
+                onClick={() => onRemove(attachment.id)}
+              >
+                {removeLabel}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ImageAttachmentGrid({
+  attachments,
+  compact = false,
+}: {
+  attachments: StudentDiscussionImageAttachment[];
+  compact?: boolean;
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn("mt-3 flex flex-wrap gap-2", compact && "mt-2")}>
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.id}
+          className={cn(
+            "block overflow-hidden rounded-lg border border-slate-200 bg-slate-50",
+            compact ? "h-16 w-16" : "h-28 w-28",
+          )}
+          href={attachment.url}
+          target="_blank"
+          rel="noreferrer"
+          title={attachment.name}
+        >
+          <img alt={attachment.name} className="h-full w-full object-cover" src={attachment.url} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function ModerationNotice({ copy }: { copy: DashboardCopy }) {
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+      {copy.discussionModerationWarning}
+    </div>
   );
 }
 
@@ -431,14 +1056,14 @@ function AccountView({
   openAssignments: StudentDashboardAssignment[];
 }) {
   return (
-    <section className="mx-auto max-w-[1280px] px-4 py-8">
+    <section className="mx-auto max-w-[1480px] px-4 py-6">
       <PageTitle
         description={copy.accountDescription}
         icon={<AccountCircleOutlinedIcon fontSize="inherit" />}
         title={copy.accountTitle}
       />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
@@ -457,8 +1082,8 @@ function AccountView({
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <ProfileStat label={copy.stats.average} value={`${averageAssignmentScore}`} />
-            <ProfileStat label={copy.stats.classRank} value={`#${studentDashboardProfile.classRank}`} />
-            <ProfileStat label={copy.stats.gradeRank} value={`#${studentDashboardProfile.gradeRank}`} />
+            <ProfileStat label={copy.stats.completed} value={`${studentDashboardProfile.completedAssignments}`} />
+            <ProfileStat label={copy.assignmentsTitle} value={`${studentDashboardProfile.completedAssignments}/${studentDashboardProfile.totalAssignments}`} />
           </div>
         </section>
 
@@ -491,8 +1116,10 @@ function StudentBrandHeader({
   account,
   activePage,
   copy,
+  notifications,
   studentName,
   studentClass,
+  onNotificationClick,
   onPageChange,
   onSignIn,
   onSignOut,
@@ -500,44 +1127,59 @@ function StudentBrandHeader({
   account: TeacherAccount | null;
   activePage: StudentPageKey;
   copy: DashboardCopy;
+  notifications: StudentDiscussionNotification[];
   studentName: string;
   studentClass: string;
+  onNotificationClick: (target: DiscussionScrollTarget) => void;
   onPageChange: (page: StudentPageKey) => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-[1280px] flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto flex max-w-[1480px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center justify-between gap-4">
           <BrandWordmark />
           <div className="lg:hidden">
-            <ProfileMenu
-              account={account}
-              copy={copy}
-              menuOpen={accountMenuOpen}
-              studentClass={studentClass}
-              studentName={studentName}
-              onMenuOpenChange={setAccountMenuOpen}
-              onPageChange={onPageChange}
-              onSignIn={onSignIn}
-              onSignOut={onSignOut}
-            />
+            <div className="flex items-center gap-2">
+              <NotificationMenu
+                copy={copy}
+                menuOpen={notificationMenuOpen}
+                notifications={notifications}
+                onMenuOpenChange={setNotificationMenuOpen}
+                onNotificationClick={(target) => {
+                  setNotificationMenuOpen(false);
+                  onNotificationClick(target);
+                }}
+              />
+              <ProfileMenu
+                account={account}
+                copy={copy}
+                menuOpen={accountMenuOpen}
+                studentClass={studentClass}
+                studentName={studentName}
+                onMenuOpenChange={setAccountMenuOpen}
+                onPageChange={onPageChange}
+                onSignIn={onSignIn}
+                onSignOut={onSignOut}
+              />
+            </div>
           </div>
         </div>
 
-        <nav className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
+        <nav className="flex gap-1 overflow-x-auto pb-1 lg:pb-0">
           {copy.navItems.map((item) => (
             <button
               key={item.key}
               type="button"
               className={cn(
-                "inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition",
+                "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-semibold transition",
                 activePage === item.key
-                  ? "bg-[var(--erg-blue)] text-white"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-[var(--erg-blue)]",
+                  ? "bg-slate-100 text-[var(--erg-blue)]"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-[var(--erg-blue)]",
               )}
               onClick={() => onPageChange(item.key)}
             >
@@ -547,7 +1189,17 @@ function StudentBrandHeader({
           ))}
         </nav>
 
-        <div className="hidden lg:block">
+        <div className="hidden lg:flex lg:items-center lg:gap-2">
+          <NotificationMenu
+            copy={copy}
+            menuOpen={notificationMenuOpen}
+            notifications={notifications}
+            onMenuOpenChange={setNotificationMenuOpen}
+            onNotificationClick={(target) => {
+              setNotificationMenuOpen(false);
+              onNotificationClick(target);
+            }}
+          />
           <ProfileMenu
             account={account}
             copy={copy}
@@ -609,20 +1261,20 @@ function ProfileMenu({
         type="button"
         aria-expanded={menuOpen}
         className={cn(
-          "flex min-w-[214px] items-center gap-3 rounded-xl border bg-white px-3 py-2 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.45)] transition hover:border-[var(--erg-blue)]/25 hover:bg-slate-50",
+          "flex min-w-[148px] items-center gap-2 rounded-lg border bg-white px-2 py-1.5 text-left transition hover:border-[var(--erg-blue)]/25 hover:bg-slate-50",
           menuOpen ? "border-[var(--erg-blue)]/30 ring-4 ring-[var(--erg-blue)]/6" : "border-slate-200",
         )}
         onClick={() => onMenuOpenChange(!menuOpen)}
       >
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[var(--erg-blue)] text-sm font-semibold text-white">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[var(--erg-blue)] text-xs font-semibold text-white">
           {initial}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-[var(--erg-blue)]">{studentName}</span>
-          <span className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+          <span className="block max-w-[98px] truncate text-sm font-semibold leading-4 text-[var(--erg-blue)]">{studentName}</span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-4 text-slate-500">
             <span>{studentClass}</span>
-            <span className="h-1 w-1 rounded-full bg-slate-300" />
-            <span>{signedInLabel}</span>
+            <span className="h-0.5 w-0.5 rounded-full bg-slate-300" />
+            <span className="max-w-[76px] truncate">{signedInLabel}</span>
           </span>
         </span>
         <ExpandMoreOutlinedIcon
@@ -665,35 +1317,117 @@ function ProfileMenu({
   );
 }
 
+function NotificationMenu({
+  copy,
+  menuOpen,
+  notifications,
+  onMenuOpenChange,
+  onNotificationClick,
+}: {
+  copy: DashboardCopy;
+  menuOpen: boolean;
+  notifications: StudentDiscussionNotification[];
+  onMenuOpenChange: (open: boolean) => void;
+  onNotificationClick: (target: DiscussionScrollTarget) => void;
+}) {
+  const unreadCount = notifications.filter((notification) => notification.unread).length;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={menuOpen}
+        aria-label={copy.notificationTitle}
+        className={cn(
+          "relative grid h-10 w-10 place-items-center rounded-lg border bg-white text-[var(--erg-blue)] transition hover:border-[var(--erg-blue)]/25 hover:bg-slate-50",
+          menuOpen ? "border-[var(--erg-blue)]/30 ring-4 ring-[var(--erg-blue)]/6" : "border-slate-200",
+        )}
+        onClick={() => onMenuOpenChange(!menuOpen)}
+      >
+        <NotificationsNoneOutlinedIcon fontSize="small" />
+        {unreadCount > 0 ? (
+          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--erg-red)] px-1 text-[10px] font-semibold text-white">
+            {unreadCount}
+          </span>
+        ) : null}
+      </button>
+
+      {menuOpen ? (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[320px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_-32px_rgba(15,23,42,0.35)]">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <div className="text-sm font-semibold text-[var(--erg-blue)]">{copy.notificationTitle}</div>
+          </div>
+          <div className="max-h-[360px] overflow-y-auto p-2">
+            {notifications.length > 0 ? (
+              notifications.map((notification) => (
+                <button
+                  key={notification.id}
+                  type="button"
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-50",
+                    notification.unread ? "bg-[var(--erg-blue)]/5" : "bg-white",
+                  )}
+                  onClick={() =>
+                    onNotificationClick({
+                      replyId: notification.replyId,
+                      threadId: notification.threadId,
+                    })
+                  }
+                >
+                  <div className="flex items-start gap-2">
+                    <span
+                      className={cn(
+                        "mt-1 h-2 w-2 shrink-0 rounded-full",
+                        notification.unread ? "bg-[var(--erg-red)]" : "bg-slate-300",
+                      )}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold leading-5 text-slate-900">
+                        {notification.primaryText}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs leading-5 text-slate-500">
+                        {notification.secondaryText}
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500">{notification.timeLabel}</span>
+                    </span>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-6 text-center text-sm text-slate-500">{copy.notificationEmpty}</div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function BrandWordmark() {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <div className="flex items-end text-4xl font-black leading-none">
+      <div className="flex items-end text-3xl font-black leading-none">
         <span className="text-[var(--erg-blue)]">ER</span>
         <span className="text-[var(--erg-red)]">G</span>
       </div>
       <div className="hidden min-w-0 sm:block">
-        <div className="truncate text-2xl font-semibold leading-none text-[var(--erg-blue)]">EDURISE GLOBAL</div>
+        <div className="truncate text-xl font-semibold leading-none text-[var(--erg-blue)]">EDURISE GLOBAL</div>
         <div className="mt-1 text-[11px] font-semibold uppercase text-slate-400">Learn today, lead tomorrow</div>
       </div>
     </div>
   );
 }
 
-function BrandDivider() {
-  return <div className="h-1 bg-[linear-gradient(90deg,#cc0022_0%,#00008b_50%,#cc0022_100%)]" />;
-}
-
 function PageTitle({ description, icon, title }: { description: string; icon: ReactNode; title: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-6">
-      <div className="flex items-start gap-4">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[var(--erg-blue)]/6 text-[var(--erg-blue)]">
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-slate-100 text-[var(--erg-blue)]">
           {icon}
         </span>
         <div>
-          <h1 className="text-3xl font-semibold text-[var(--erg-blue)]">{title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">{description}</p>
+          <h1 className="text-2xl font-semibold text-[var(--erg-blue)]">{title}</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
         </div>
       </div>
     </div>
@@ -710,8 +1444,8 @@ function SectionHeader({
   title: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-      <h2 className="text-xl font-semibold text-[var(--erg-blue)]">{title}</h2>
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+      <h2 className="text-lg font-semibold text-[var(--erg-blue)]">{title}</h2>
       <button type="button" className="text-sm font-semibold text-[var(--erg-blue)]" onClick={onAction}>
         {actionLabel}
       </button>
@@ -719,231 +1453,56 @@ function SectionHeader({
   );
 }
 
-function PriorityPanel({
-  assignment,
-  copy,
-  onOpen,
-}: {
-  assignment: StudentDashboardAssignment;
-  copy: DashboardCopy;
-  onOpen: () => void;
-}) {
-  return (
-    <section className="rounded-lg bg-[var(--erg-blue)] p-6 text-white">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="text-xs font-semibold uppercase text-white/70">{copy.priority.title}</div>
-          <h2 className="mt-4 text-2xl font-semibold leading-snug">{assignment.title}</h2>
-          <p className="mt-3 text-sm leading-7 text-white/78">{copy.priority.detail(assignment.dueLabel)}</p>
-        </div>
-        <div className="shrink-0">
-          <StatusPill status={assignment.status} label={assignment.statusLabel} />
-        </div>
-      </div>
-      <ProgressBar value={assignment.progressRate} className="mt-5 h-2.5 bg-white/20" indicatorClassName="bg-white" />
-      <Button className="mt-5 bg-white text-[var(--erg-blue)] hover:bg-white/90" onClick={onOpen}>
-        {copy.priority.action}
-      </Button>
-    </section>
-  );
-}
+function AssignmentScoreCard({ assignment, copy }: { assignment: StudentDashboardAssignment; copy: DashboardCopy }) {
+  const bestAttempt = getBestAttempt(assignment.attempts);
+  const recentAttempts = assignment.attempts.slice(0, 3);
 
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone = "default",
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone?: "default" | "danger";
-}) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-sm font-semibold text-slate-500">{label}</div>
-          <div className={cn("mt-2 text-3xl font-semibold", tone === "danger" ? "text-[var(--erg-red)]" : "text-[var(--erg-blue)]")}>
-            {value}
+    <article className="border-b border-slate-100 p-4 last:border-b-0">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill status={assignment.status} label={assignment.statusLabel} />
+            <CompactBadge>{assignment.subjectLabel}</CompactBadge>
+            <span className="text-sm text-slate-500">{assignment.dueLabel}</span>
+          </div>
+
+          <h2 className="mt-2 text-lg font-semibold leading-snug text-[var(--erg-blue)]">{assignment.title}</h2>
+        </div>
+
+        <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 md:w-[148px] md:text-right">
+          <div className="text-xs font-semibold uppercase text-slate-500">{copy.bestScoreLabel}</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--erg-blue)]">
+            {bestAttempt ? copy.scoreBadge(bestAttempt.score, bestAttempt.maxScore) : copy.pendingScore}
           </div>
         </div>
-        <span className="grid h-11 w-11 place-items-center rounded-lg bg-[var(--erg-blue)]/6 text-[var(--erg-blue)]">
-          {icon}
-        </span>
       </div>
-    </section>
-  );
-}
 
-function QuickRankingCard({
-  copy,
-  entries,
-  onOpen,
-}: {
-  copy: DashboardCopy;
-  entries: StudentLeaderboardEntry[];
-  onOpen: () => void;
-}) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <SectionHeader actionLabel={copy.rankingTitle} onAction={onOpen} title={copy.classRankingTitle} />
-      <div className="grid gap-3 p-4">
-        {entries.slice(0, 4).map((entry, index) => (
-          <QuickStudentRow
-            key={entry.id}
-            entry={entry}
-            index={index}
-            scoreLabel={copy.chartScoreLabel}
-            youBadge={copy.youBadge}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function QuickStudentRow({
-  entry,
-  index,
-  scoreLabel,
-  youBadge,
-}: {
-  entry: StudentLeaderboardEntry;
-  index: number;
-  scoreLabel: string;
-  youBadge: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-lg border px-3 py-3",
-        entry.isCurrentStudent ? "border-[var(--erg-blue)]/20 bg-[var(--erg-blue)]/5" : "border-slate-200 bg-white",
-      )}
-    >
-      <div
-        className={cn(
-          "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-sm font-semibold",
-          index === 0
-            ? "bg-amber-100 text-amber-700"
-            : entry.isCurrentStudent
-              ? "bg-[var(--erg-blue)] text-white"
-              : "bg-slate-100 text-slate-600",
-        )}
-      >
-        {getInitials(entry.name)}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-[var(--erg-blue)]">#{index + 1}</span>
-          <span className="truncate text-sm font-semibold text-slate-950">{entry.name}</span>
-          {entry.isCurrentStudent ? (
-            <Badge className="border-[var(--erg-red)]/10 bg-[var(--erg-red)]/5 text-[var(--erg-red)]" tone="outline">
-              {youBadge}
-            </Badge>
-          ) : null}
+      <div className="mt-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-400">
+          <span>{copy.recentResultsTitle}</span>
+          <span>{recentAttempts.length}/{Math.min(assignment.attempts.length, 3)}</span>
         </div>
-        <div className="mt-1 text-xs text-slate-500">{entry.className}</div>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-lg font-semibold text-[var(--erg-blue)]">{entry.averageScore}</div>
-        <div className="text-xs text-slate-500">{scoreLabel}</div>
-      </div>
-    </div>
-  );
-}
-
-function RankingPanel({
-  copy,
-  entries,
-  title,
-}: {
-  copy: DashboardCopy;
-  entries: StudentLeaderboardEntry[];
-  title: string;
-}) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h2 className="text-xl font-semibold text-[var(--erg-blue)]">{title}</h2>
-      </div>
-      <div className="p-5">
-        <RankingBarChart entries={entries} scoreLabel={copy.chartScoreLabel} />
-        <div className="mt-6 grid gap-3">
-          {entries.map((entry, index) => (
-            <LeaderboardRow
-              key={entry.id}
-              entry={entry}
-              index={index}
-              scoreLabel={copy.chartScoreLabel}
-              youBadge={copy.youBadge}
-            />
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {recentAttempts.map((attempt) => (
+            <AttemptResultRow key={attempt.id} attempt={attempt} copy={copy} />
           ))}
         </div>
       </div>
-    </section>
+    </article>
   );
 }
 
-function RankingBarChart({
-  entries,
-  scoreLabel,
-}: {
-  entries: StudentLeaderboardEntry[];
-  scoreLabel: string;
-}) {
-  const chartMax = 100;
-  const leader = entries[0];
-  const currentStudent = entries.find((entry) => entry.isCurrentStudent);
-  const gapToLeader =
-    leader && currentStudent && leader.id !== currentStudent.id
-      ? Math.max(0, leader.averageScore - currentStudent.averageScore)
-      : 0;
-
+function AttemptResultRow({ attempt, copy }: { attempt: StudentAssignmentAttempt; copy: DashboardCopy }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div>
-        <h3 className="text-base font-semibold text-slate-950">Bar Chart - Label</h3>
-        <p className="mt-1 text-sm text-slate-500">Điểm trung bình hiện tại</p>
-      </div>
-
-      <div className="relative mt-8 h-[245px]">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-slate-100" />
-        <div className="pointer-events-none absolute inset-x-0 top-1/3 h-px bg-slate-100" />
-        <div className="pointer-events-none absolute inset-x-0 top-2/3 h-px bg-slate-100" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-8 h-px bg-slate-100" />
-
-        <div
-          className="relative z-[1] grid h-full items-end gap-4 px-1"
-          style={{ gridTemplateColumns: `repeat(${entries.length}, minmax(0, 1fr))` }}
-        >
-          {entries.map((entry) => {
-            const height = Math.max(28, Math.round((entry.averageScore / chartMax) * 178));
-
-          return (
-              <div key={entry.id} className="flex min-w-0 flex-col items-center">
-                <div className="mb-2 text-sm font-medium text-slate-950">{entry.averageScore}</div>
-              <div
-                className={cn(
-                    "w-full max-w-[56px] rounded-md bg-[#93c5fd] transition hover:bg-[#7db7fb]",
-                    entry.isCurrentStudent && "ring-2 ring-[var(--erg-blue)] ring-offset-2",
-                )}
-                  style={{ height }}
-                  title={`${entry.name}: ${entry.averageScore} ${scoreLabel}`}
-              />
-                <div className="mt-4 w-full truncate text-center text-sm text-slate-600" title={entry.name}>
-                  {shortName(entry.name)}
-                </div>
-            </div>
-          );
-        })}
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold text-slate-950">{attempt.completedAtLabel}</div>
+        <div className="mt-1 text-xs text-slate-500">
+          {copy.attemptDurationLabel}: {attempt.durationLabel}
         </div>
       </div>
-
-      <div className="mt-5 text-sm font-semibold text-slate-950">
-        {gapToLeader > 0 ? `Bạn còn cách top ${gapToLeader} điểm` : "Bạn đang giữ vị trí dẫn đầu"} ↗
-      </div>
-      <p className="mt-2 text-sm text-slate-500">Showing average score for current leaderboard</p>
+      <div className="mt-2 text-lg font-semibold text-[var(--erg-blue)]">{copy.scoreBadge(attempt.score, attempt.maxScore)}</div>
     </div>
   );
 }
@@ -963,8 +1522,8 @@ function AssignmentCard({
   const actionable = assignment.status !== "submitted";
 
   return (
-    <Card className={cn("rounded-lg border bg-white shadow-none", statusMeta.cardClassName)}>
-      <div className={compact ? "p-4" : "p-5"}>
+    <Card className={cn("rounded-xl border bg-white shadow-none", statusMeta.cardClassName)}>
+      <div className={compact ? "p-3" : "p-4"}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -972,7 +1531,7 @@ function AssignmentCard({
               <CompactBadge>{assignment.subjectLabel}</CompactBadge>
             </div>
 
-            <h3 className="mt-3 text-xl font-semibold leading-snug text-[var(--erg-blue)]">{assignment.title}</h3>
+            <h3 className={cn("mt-2 font-semibold leading-snug text-[var(--erg-blue)]", compact ? "text-base" : "text-lg")}>{assignment.title}</h3>
             {!compact ? (
               <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-500">
                 <span>{assignment.teacherName}</span>
@@ -1010,14 +1569,14 @@ function AssignmentCard({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_120px_120px]">
+        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_112px_112px]">
           <div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-semibold uppercase text-slate-400">{copy.progressLabel}</span>
               <span className="text-sm font-semibold text-slate-900">{assignment.progressRate}%</span>
             </div>
             <ProgressBar value={assignment.progressRate} className="mt-2 h-2.5 bg-slate-100" indicatorClassName={statusMeta.progressClassName} />
-            {!compact ? <p className="mt-3 text-sm leading-7 text-slate-500">{assignment.focusNote}</p> : null}
+            {!compact ? <p className="mt-2 text-sm leading-6 text-slate-500">{assignment.focusNote}</p> : null}
           </div>
 
           {!compact ? (
@@ -1040,56 +1599,34 @@ function CompactBadge({ children }: { children: string }) {
   );
 }
 
+function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md" }) {
+  return (
+    <span
+      className={cn(
+        "grid shrink-0 place-items-center rounded-md bg-[var(--erg-blue)] font-semibold text-white",
+        size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm",
+      )}
+    >
+      {initials}
+    </span>
+  );
+}
+
 function CompactStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-4 py-4">
+    <div className="rounded-lg bg-slate-50 px-3 py-3">
       <div className="text-xs font-semibold uppercase text-slate-400">{label}</div>
-      <div className="mt-2 text-xl font-semibold text-[var(--erg-blue)]">{value}</div>
+      <div className="mt-1 text-lg font-semibold text-[var(--erg-blue)]">{value}</div>
     </div>
   );
 }
 
 function ProfileStat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "danger" }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="text-xs font-semibold uppercase text-slate-400">{label}</div>
-      <div className={cn("mt-2 text-2xl font-semibold", tone === "danger" ? "text-[var(--erg-red)]" : "text-[var(--erg-blue)]")}>
+      <div className={cn("mt-1 text-xl font-semibold", tone === "danger" ? "text-[var(--erg-red)]" : "text-[var(--erg-blue)]")}>
         {value}
-      </div>
-    </div>
-  );
-}
-
-function LeaderboardRow({
-  entry,
-  index,
-  scoreLabel,
-  youBadge,
-}: {
-  entry: StudentLeaderboardEntry;
-  index: number;
-  scoreLabel: string;
-  youBadge: string;
-}) {
-  return (
-    <div className={cn("flex items-center gap-4 rounded-lg border px-4 py-3", entry.isCurrentStudent ? "border-[var(--erg-blue)]/20 bg-[var(--erg-blue)]/5" : "border-slate-200 bg-white")}>
-      <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg text-sm font-semibold", index === 0 ? "bg-amber-100 text-amber-700" : "bg-[var(--erg-blue)]/8 text-[var(--erg-blue)]")}>
-        #{index + 1}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-semibold text-slate-950">{entry.name}</span>
-          {entry.isCurrentStudent ? (
-            <Badge className="border-[var(--erg-red)]/10 bg-[var(--erg-red)]/5 text-[var(--erg-red)]" tone="outline">
-              {youBadge}
-            </Badge>
-          ) : null}
-        </div>
-        <div className="mt-1 text-xs text-slate-500">{entry.className} • {entry.schoolName}</div>
-      </div>
-      <div className="text-right">
-        <div className="text-lg font-semibold text-[var(--erg-blue)]">{entry.averageScore}</div>
-        <div className="text-xs text-slate-500">{scoreLabel}</div>
       </div>
     </div>
   );
@@ -1105,9 +1642,8 @@ function StatusPill({ status, label }: { status: StudentAssignmentStatus; label:
 
 function StudentFooter({ copy }: { copy: DashboardCopy }) {
   return (
-    <footer className="mt-10 border-t border-slate-200 bg-white">
-      <BrandDivider />
-      <div className="mx-auto flex max-w-[1280px] flex-col gap-3 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+    <footer className="mt-8 border-t border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-[1480px] flex-col gap-2 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-semibold text-[var(--erg-blue)]">{copy.footerTitle}</div>
           <div className="mt-1 text-sm text-slate-500">{copy.footerSubtitle}</div>
@@ -1118,16 +1654,108 @@ function StudentFooter({ copy }: { copy: DashboardCopy }) {
   );
 }
 
-function shortName(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return parts.length <= 2 ? name : `${parts[0]} ${parts[parts.length - 1]}`;
+function getBestAttempt(attempts: StudentAssignmentAttempt[]) {
+  return attempts.reduce<StudentAssignmentAttempt | null>(
+    (bestAttempt, attempt) => (!bestAttempt || attempt.score > bestAttempt.score ? attempt : bestAttempt),
+    null,
+  );
 }
 
 function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.slice(0, 1) ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1].slice(0, 1) : "";
-  return `${first}${last}`.toUpperCase();
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part.slice(0, 1).toUpperCase())
+    .join("");
+}
+
+function getThreadActivityMs(thread: StudentDiscussionThread) {
+  return Math.max(thread.createdAtMs, ...thread.replies.map((reply) => reply.createdAtMs));
+}
+
+function getDiscussionThreadDomId(threadId: string) {
+  return `discussion-thread-${threadId}`;
+}
+
+function getDiscussionReplyDomId(replyId: string) {
+  return `discussion-reply-${replyId}`;
+}
+
+function createInitialDiscussionNotifications(
+  threads: StudentDiscussionThread[],
+  locale: string,
+): StudentDiscussionNotification[] {
+  return [...threads]
+    .sort((left, right) => getThreadActivityMs(right) - getThreadActivityMs(left))
+    .slice(0, 3)
+    .map((thread) => {
+      const latestReply = [...thread.replies].sort((left, right) => right.createdAtMs - left.createdAtMs)[0];
+      const hasLatestReply = latestReply && latestReply.createdAtMs > thread.createdAtMs;
+
+      return {
+        id: `notification-${hasLatestReply ? latestReply.id : thread.id}`,
+        primaryText:
+          locale === "vi"
+            ? hasLatestReply
+              ? `${latestReply.authorName} đã trả lời bạn`
+              : `${thread.authorName} đã tạo chủ đề mới`
+            : hasLatestReply
+              ? `${latestReply.authorName} replied to you`
+              : `${thread.authorName} created a new topic`,
+        secondaryText:
+          locale === "vi"
+            ? hasLatestReply
+              ? `trong "${thread.title}"`
+              : thread.title
+            : hasLatestReply
+              ? `in "${thread.title}"`
+              : thread.title,
+        replyId: hasLatestReply ? latestReply.id : undefined,
+        threadId: thread.id,
+        timeLabel: hasLatestReply ? latestReply.createdAtLabel : thread.createdAtLabel,
+        unread: true,
+      };
+    });
+}
+
+function maskProfanity(value: string) {
+  const maskedValue = profanityWords.reduce((currentValue, word) => {
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(word)})(?=$|[^\\p{L}\\p{N}])`, "giu");
+    return currentValue.replace(pattern, "$1***");
+  }, value);
+
+  return {
+    value: maskedValue,
+    hasProfanity: maskedValue !== value,
+  };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createImageAttachments(files: FileList | null) {
+  const imageFiles = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
+
+  return Promise.all(
+    imageFiles.map(
+      (file, index) =>
+        new Promise<StudentDiscussionImageAttachment>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              id: `image-${Date.now()}-${index}-${file.name}`,
+              type: "image",
+              name: file.name,
+              url: typeof reader.result === "string" ? reader.result : "",
+            });
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        }),
+    ),
+  );
 }
 
 const assignmentStatusMeta: Record<
@@ -1164,20 +1792,21 @@ const viCopy: DashboardCopy = {
   navItems: [
     { key: "overview", label: "Tổng quan", icon: <HomeOutlinedIcon fontSize="small" /> },
     { key: "assignments", label: "Bài tập", icon: <AssignmentTurnedInOutlinedIcon fontSize="small" /> },
-    { key: "ranking", label: "Xếp hạng", icon: <BarChartOutlinedIcon fontSize="small" /> },
+    { key: "scores", label: "Điểm bài tập", icon: <SchoolOutlinedIcon fontSize="small" /> },
+    { key: "discussion", label: "Thảo luận", icon: <ForumOutlinedIcon fontSize="small" /> },
+    { key: "announcements", label: "Thông báo", icon: <NotificationsNoneOutlinedIcon fontSize="small" /> },
   ],
   heroEyebrow: "Bảng học tập",
   heroTitle: (name: string) => `Chào ${name}, chọn bài cần làm hôm nay.`,
   heroDescription: (taskTitle: string) =>
-    `Ưu tiên của bạn là "${taskTitle}". Màn hình này gom bài tập, tiến độ và xếp hạng vào từng trang rõ ràng để bạn không phải tìm lâu.`,
+    `Ưu tiên của bạn là "${taskTitle}". Màn hình này gom bài tập, tiến độ và điểm số vào từng trang rõ ràng để bạn không phải tìm lâu.`,
   primaryAction: "Làm bài ưu tiên",
   secondaryAction: "Xem bài tập",
   stats: {
     open: "Bài đang mở",
     overdue: "Bài quá hạn",
     average: "Điểm trung bình",
-    classRank: "Hạng lớp",
-    gradeRank: "Hạng khối",
+    completed: "Bài đã hoàn thành",
   },
   priority: {
     title: "Việc nên làm ngay",
@@ -1187,10 +1816,44 @@ const viCopy: DashboardCopy = {
   todayTitle: "Bài cần xử lý hôm nay",
   assignmentsTitle: "Bài tập",
   assignmentsDescription: "Tất cả bài được giao, trạng thái quá hạn, tiến độ hoàn thành và điểm số.",
-  rankingTitle: "Xếp hạng",
-  rankingDescription: "Theo dõi top trong lớp và trong khối bằng biểu đồ cột, dễ nhìn hơn cho học sinh.",
-  classRankingTitle: "Top trong lớp",
-  gradeRankingTitle: "Top trong khối",
+  scoresTitle: "Điểm bài tập",
+  scoresDescription: "Theo dõi điểm cao nhất và 3 kết quả gần đây của từng bài tập đã được giao.",
+  bestScoreLabel: "Điểm cao nhất",
+  recentResultsTitle: "Kết quả gần đây",
+  noRecentResults: "Chưa có lần làm nào cho bài tập này.",
+  attemptDurationLabel: "Thời gian làm bài",
+  discussionTitle: "Thảo luận lớp",
+  discussionDescription: "Hỏi bài và trao đổi với các bạn trong cùng lớp, giống diễn đàn lớp học.",
+  discussionComposerTitle: "Đặt câu hỏi mới",
+  discussionTitlePlaceholder: "Bạn đang vướng phần nào?",
+  discussionBodyPlaceholder: "Viết rõ câu hỏi, cách bạn đã thử làm hoặc phần chưa hiểu...",
+  discussionAttachmentAction: "Chèn ảnh",
+  discussionAttachmentHint: "Có thể thêm nhiều ảnh minh họa.",
+  discussionRemoveAttachment: "Bỏ ảnh",
+  discussionModerationWarning: "Nội dung này có từ không phù hợp nên đã được hệ thống thay bằng ***.",
+  discussionPostAction: "Đăng câu hỏi",
+  discussionReplyPlaceholder: "Viết phản hồi cho chủ đề này...",
+  discussionReplyAction: "Trả lời",
+  discussionRepliesLabel: (count: number) => `${count} phản hồi`,
+  discussionResolvedLabel: "Đã giải đáp",
+  discussionRelatedLabel: "Bài liên quan",
+  discussionEmptyTitle: "Chưa có thảo luận nào",
+  discussionEmptyDescription: "Bạn có thể mở chủ đề đầu tiên để hỏi bài cùng lớp.",
+  discussionPageLabel: (page: number, totalPages: number) => `Trang ${page}/${totalPages}`,
+  discussionPreviousPage: "Trước",
+  discussionNextPage: "Tiếp",
+  announcementTitle: "Thông báo giáo viên",
+  announcementDescription: "Tất cả thông báo từ giáo viên gửi riêng cho bạn hoặc gửi chung cho lớp.",
+  announcementHeroTitle: "Chưa có thông báo mới",
+  announcementHeroEmpty: "Khi giáo viên gửi thông báo, nội dung quan trọng sẽ hiển thị tại đây.",
+  announcementPinnedLabel: "Quan trọng",
+  notificationTitle: "Thông báo",
+  notificationEmpty: "Chưa có thông báo mới.",
+  notificationNewTopicLabel: "Chủ đề mới",
+  notificationImageOnly: "Đã gửi ảnh",
+  notificationNewThread: (authorName: string) => `${authorName} đã tạo chủ đề mới`,
+  notificationNewReply: (authorName: string) => `${authorName} đã trả lời bạn`,
+  notificationTopicContext: (title: string) => `trong "${title}"`,
   accountTitle: "Quản lý tài khoản",
   accountDescription: "Thông tin hồ sơ học sinh, trạng thái đăng nhập và các thao tác tài khoản.",
   learningProfileTitle: "Hồ sơ học tập",
@@ -1203,8 +1866,6 @@ const viCopy: DashboardCopy = {
   pendingScore: "Chờ chấm",
   assignmentAction: (status: StudentAssignmentStatus) =>
     status === "in_progress" ? "Làm tiếp" : status === "overdue" ? "Làm ngay" : status === "submitted" ? "Đã nộp" : "Bắt đầu",
-  chartScoreLabel: "điểm TB",
-  youBadge: "Bạn",
   signedInAs: "Đã đăng nhập",
   guestLabel: "Chưa đăng nhập",
   signIn: "Đăng nhập",
@@ -1222,20 +1883,21 @@ const enCopy: DashboardCopy = {
   navItems: [
     { key: "overview", label: "Overview", icon: <HomeOutlinedIcon fontSize="small" /> },
     { key: "assignments", label: "Assignments", icon: <AssignmentTurnedInOutlinedIcon fontSize="small" /> },
-    { key: "ranking", label: "Ranking", icon: <BarChartOutlinedIcon fontSize="small" /> },
+    { key: "scores", label: "Assignment scores", icon: <SchoolOutlinedIcon fontSize="small" /> },
+    { key: "discussion", label: "Discussion", icon: <ForumOutlinedIcon fontSize="small" /> },
+    { key: "announcements", label: "Notices", icon: <NotificationsNoneOutlinedIcon fontSize="small" /> },
   ],
   heroEyebrow: "Learning board",
   heroTitle: (name: string) => `Hi ${name}, choose what to finish today.`,
   heroDescription: (taskTitle: string) =>
-    `Your priority is "${taskTitle}". Assignments, progress, and ranking are separated into clear pages so students can find the next action quickly.`,
+    `Your priority is "${taskTitle}". Assignments, progress, and scores are separated into clear pages so students can find the next action quickly.`,
   primaryAction: "Open priority task",
   secondaryAction: "View assignments",
   stats: {
     open: "Open tasks",
     overdue: "Overdue",
     average: "Average score",
-    classRank: "Class rank",
-    gradeRank: "Grade rank",
+    completed: "Completed tasks",
   },
   priority: {
     title: "Best next action",
@@ -1245,10 +1907,44 @@ const enCopy: DashboardCopy = {
   todayTitle: "Tasks to handle today",
   assignmentsTitle: "Assignments",
   assignmentsDescription: "All assigned tasks, overdue status, completion progress, and score.",
-  rankingTitle: "Ranking",
-  rankingDescription: "Track class and grade leaders with simple bar charts.",
-  classRankingTitle: "Top in class",
-  gradeRankingTitle: "Top in grade",
+  scoresTitle: "Assignment scores",
+  scoresDescription: "Review the best score and 3 most recent results for each assigned task.",
+  bestScoreLabel: "Best score",
+  recentResultsTitle: "Recent results",
+  noRecentResults: "No attempts have been recorded for this assignment yet.",
+  attemptDurationLabel: "Attempt time",
+  discussionTitle: "Class discussion",
+  discussionDescription: "Ask questions and exchange ideas with classmates, like a simple classroom forum.",
+  discussionComposerTitle: "Start a new question",
+  discussionTitlePlaceholder: "What part are you stuck on?",
+  discussionBodyPlaceholder: "Write the question, what you tried, or the exact step you do not understand...",
+  discussionAttachmentAction: "Add image",
+  discussionAttachmentHint: "You can attach multiple reference images.",
+  discussionRemoveAttachment: "Remove",
+  discussionModerationWarning: "This message had inappropriate words and they were replaced with ***.",
+  discussionPostAction: "Post question",
+  discussionReplyPlaceholder: "Write a reply for this topic...",
+  discussionReplyAction: "Reply",
+  discussionRepliesLabel: (count: number) => `${count} replies`,
+  discussionResolvedLabel: "Resolved",
+  discussionRelatedLabel: "Related task",
+  discussionEmptyTitle: "No discussions yet",
+  discussionEmptyDescription: "Start the first topic to ask classmates for help.",
+  discussionPageLabel: (page: number, totalPages: number) => `Page ${page}/${totalPages}`,
+  discussionPreviousPage: "Previous",
+  discussionNextPage: "Next",
+  announcementTitle: "Teacher notices",
+  announcementDescription: "All teacher notices sent directly to you or to your class.",
+  announcementHeroTitle: "No new notices",
+  announcementHeroEmpty: "Important teacher notices will appear here when they are posted.",
+  announcementPinnedLabel: "Important",
+  notificationTitle: "Notifications",
+  notificationEmpty: "No new notifications.",
+  notificationNewTopicLabel: "New topic",
+  notificationImageOnly: "Sent an image",
+  notificationNewThread: (authorName: string) => `${authorName} created a new topic`,
+  notificationNewReply: (authorName: string) => `${authorName} replied to you`,
+  notificationTopicContext: (title: string) => `in "${title}"`,
   accountTitle: "Manage account",
   accountDescription: "Student profile, login state, and account actions.",
   learningProfileTitle: "Learning profile",
@@ -1261,8 +1957,6 @@ const enCopy: DashboardCopy = {
   pendingScore: "Pending",
   assignmentAction: (status: StudentAssignmentStatus) =>
     status === "in_progress" ? "Continue" : status === "overdue" ? "Do now" : status === "submitted" ? "Submitted" : "Start",
-  chartScoreLabel: "avg score",
-  youBadge: "You",
   signedInAs: "Signed in",
   guestLabel: "Not signed in",
   signIn: "Sign in",

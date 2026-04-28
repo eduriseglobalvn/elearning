@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import AnalyticsOutlinedIcon from "@mui/icons-material/AnalyticsOutlined";
-import AutoGraphOutlinedIcon from "@mui/icons-material/AutoGraphOutlined";
-import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
-import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 
-import { DashboardMetricCard, DashboardPageShell, DashboardSectionCard, DashboardSegmentedControl, DashboardStatusBadge } from "@/components/dashboard/dashboard-page-shell";
-import { Button, ProgressBar } from "@/components/ui/dashboard-kit";
-import { useI18n } from "@/features/i18n";
+import {
+  DashboardPageShell,
+  DashboardSectionCard,
+  DashboardSegmentedControl,
+  DashboardStatusBadge,
+} from "@/components/dashboard/dashboard-page-shell";
+import { Badge, Button, ProgressBar } from "@/components/ui/dashboard-kit";
 import {
   assignmentRuns,
   classroomClusters,
@@ -14,9 +14,13 @@ import {
   classroomSnapshots,
   interventionQueue,
 } from "@/features/classroom/api/mock-classroom-data";
+import type { ClassroomSchool, ClassroomSnapshot, InterventionItem } from "@/features/classroom/types/classroom-types";
 import type { DashboardLeaf } from "@/features/dashboard/types/dashboard-types";
+import { useI18n } from "@/features/i18n";
+import { cn } from "@/lib/utils";
 
 type OverviewMode = "center" | "school";
+type BadgeTone = "success" | "warning" | "danger" | "outline" | "secondary";
 
 export function OverviewWorkspace({
   activeLeaf,
@@ -32,18 +36,17 @@ export function OverviewWorkspace({
   const [clusterId, setClusterId] = useState("all");
 
   const filteredSchools = useMemo(
-    () =>
-      classroomSchools.filter((school) => (clusterId === "all" ? true : school.clusterId === clusterId)),
+    () => classroomSchools.filter((school) => (clusterId === "all" ? true : school.clusterId === clusterId)),
     [clusterId],
   );
   const filteredSnapshots = useMemo(
-    () =>
-      classroomSnapshots.filter((snapshot) => (clusterId === "all" ? true : snapshot.clusterId === clusterId)),
+    () => classroomSnapshots.filter((snapshot) => (clusterId === "all" ? true : snapshot.clusterId === clusterId)),
     [clusterId],
   );
 
   const totals = useMemo(() => {
     const activeStudents = filteredSchools.reduce((sum, school) => sum + school.activeStudents, 0);
+    const activeClasses = filteredSchools.reduce((sum, school) => sum + school.activeClasses, 0);
     const averageCompletion = Math.round(
       filteredSchools.reduce((sum, school) => sum + school.completionRate, 0) / Math.max(filteredSchools.length, 1),
     );
@@ -51,18 +54,35 @@ export function OverviewWorkspace({
       filteredSchools.reduce((sum, school) => sum + school.averageScore, 0) / Math.max(filteredSchools.length, 1),
     );
     const flaggedStudents = filteredSchools.reduce((sum, school) => sum + school.flaggedStudents, 0);
+    const overdueAssignments = filteredSchools.reduce((sum, school) => sum + school.overdueAssignments, 0);
 
-    return { activeStudents, averageCompletion, averageScore, flaggedStudents };
+    return { activeStudents, activeClasses, averageCompletion, averageScore, flaggedStudents, overdueAssignments };
   }, [filteredSchools]);
 
-  const riskiestClasses = useMemo(
-    () => [...filteredSnapshots].sort((left, right) => right.riskStudents - left.riskStudents).slice(0, 4),
+  const classesNeedingSupport = useMemo(
+    () => [...filteredSnapshots].sort((left, right) => right.riskStudents - left.riskStudents),
     [filteredSnapshots],
   );
-  const topSchools = useMemo(
-    () => [...filteredSchools].sort((left, right) => right.completionRate - left.completionRate),
+  const schoolsByAttention = useMemo(
+    () => [...filteredSchools].sort((left, right) => right.flaggedStudents - left.flaggedStudents),
     [filteredSchools],
   );
+
+  const activeCluster = classroomClusters.find((cluster) => cluster.id === clusterId);
+  const summaryItems =
+    mode === "center"
+      ? [
+          { label: copy.summary.openAssignments, value: String(assignmentRuns.length), detail: copy.summary.openAssignmentsHint },
+          { label: copy.summary.needsSupport, value: String(totals.flaggedStudents), detail: copy.summary.needsSupportHint },
+          { label: copy.summary.completion, value: `${totals.averageCompletion}%`, detail: copy.summary.completionHint },
+          { label: copy.summary.scope, value: activeCluster?.label ?? copy.allClusters, detail: copy.summary.scopeHint(filteredSchools.length) },
+        ]
+      : [
+          { label: copy.summary.schools, value: String(filteredSchools.length), detail: copy.summary.schoolHint },
+          { label: copy.summary.classes, value: String(totals.activeClasses), detail: copy.summary.classHint },
+          { label: copy.summary.needsSupport, value: String(totals.flaggedStudents), detail: copy.summary.needsSupportHint },
+          { label: copy.summary.averageScore, value: String(totals.averageScore), detail: copy.summary.averageScoreHint },
+        ];
 
   return (
     <DashboardPageShell
@@ -83,331 +103,445 @@ export function OverviewWorkspace({
           <Button variant="outline" onClick={() => onOpenLeaf("question-bank")}>
             {copy.openQuestionBank}
           </Button>
+          <Button variant="outline" onClick={() => onOpenLeaf(mode === "center" ? "school-pulse" : "ops-overview")}>
+            {mode === "center" ? copy.openSchoolOverview : copy.openLearningOps}
+          </Button>
           <Button onClick={() => onOpenLeaf("course-modules")}>{copy.openQuizStudio}</Button>
         </>
       }
+      headerContent={<SummaryStrip items={summaryItems} />}
     >
-      <div className="grid gap-4 xl:grid-cols-4">
-        <DashboardMetricCard
-          label={copy.metrics.activeStudents}
-          value={totals.activeStudents.toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
-          detail={copy.metrics.activeStudentsDetail(filteredSchools.length)}
-          delta={copy.metrics.activeStudentsDelta}
-          icon={<AnalyticsOutlinedIcon fontSize="inherit" />}
-        />
-        <DashboardMetricCard
-          label={copy.metrics.completion}
-          value={`${totals.averageCompletion}%`}
-          detail={copy.metrics.completionDetail}
-          delta={copy.metrics.completionDelta}
-          icon={<FactCheckOutlinedIcon fontSize="inherit" />}
-          tone="emerald"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.averageScore}
-          value={`${totals.averageScore}`}
-          detail={copy.metrics.averageScoreDetail}
-          delta={copy.metrics.averageScoreDelta}
-          icon={<AutoGraphOutlinedIcon fontSize="inherit" />}
-          tone="amber"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.flagged}
-          value={`${totals.flaggedStudents}`}
-          detail={copy.metrics.flaggedDetail}
-          delta={copy.metrics.flaggedDelta}
-          icon={<WarningAmberOutlinedIcon fontSize="inherit" />}
-          tone="rose"
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-        <DashboardSectionCard
-          title={mode === "center" ? copy.schoolBoardTitle : copy.classPulseTitle}
-          description={mode === "center" ? copy.schoolBoardDescription : copy.classPulseDescription}
-        >
-          <div className="space-y-3">
-            {(mode === "center" ? topSchools : filteredSnapshots).slice(0, 6).map((item) => {
-              const isSchool = "principal" in item;
-
-              return (
-                <div key={item.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <div className="text-base font-semibold text-slate-950">
-                        {isSchool ? item.name : `${item.className} • ${item.schoolName}`}
-                      </div>
-                      <div className="mt-1 text-sm leading-6 text-slate-500">
-                        {isSchool
-                          ? `${copy.schoolPrincipal}: ${item.principal}`
-                          : `${item.gradeLabel} • ${copy.teacherLabel}: ${item.homeroomTeacher}`}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <DashboardStatusBadge
-                        label={
-                          isSchool
-                            ? `${item.activeClasses} ${copy.classroomsLabel}`
-                            : `${item.activeAssignments} ${copy.activeAssignmentsLabel}`
-                        }
-                        tone="outline"
-                      />
-                      <DashboardStatusBadge
-                        label={`${isSchool ? item.averageScore : item.averageScore} ${copy.pointsLabel}`}
-                        tone="secondary"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-4 md:grid-cols-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        {copy.completionLabel}
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-900">
-                        {isSchool ? item.completionRate : item.completionRate}%
-                      </div>
-                      <ProgressBar
-                        value={isSchool ? item.completionRate : item.completionRate}
-                        className="mt-2 h-2.5 bg-slate-200"
-                        indicatorClassName="bg-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        {copy.overdueLabel}
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-900">
-                        {isSchool ? item.overdueAssignments : item.riskStudents}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {isSchool ? copy.pendingAssignments : copy.studentsNeedSupport}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        {copy.lastActivityLabel}
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-900">
-                        {isSchool ? copy.schoolSummaryHint : item.lastSubmissionAt}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {isSchool ? copy.schoolConsistencyHint : copy.lastSubmissionHint}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+      {mode === "center" ? (
+        <>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+            <TodayActionPanel copy={copy} items={interventionQueue} onOpenLeaf={onOpenLeaf} />
+            <AssignmentRunPanel copy={copy} />
           </div>
-        </DashboardSectionCard>
 
-        <DashboardSectionCard title={copy.assignmentTitle} description={copy.assignmentDescription}>
-          <div className="space-y-3">
-            {assignmentRuns.map((assignment) => (
-              <div key={assignment.id} className="rounded-[22px] border border-slate-200 bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">{assignment.title}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {assignment.subjectLabel} • {assignment.targetLevel}
-                    </div>
-                  </div>
-                  <DashboardStatusBadge
-                    label={`${assignment.activeClasses} ${copy.classroomsLabel}`}
-                    tone="outline"
-                  />
-                </div>
-                <div className="mt-4 text-sm font-semibold text-slate-900">{assignment.completionRate}%</div>
-                <ProgressBar value={assignment.completionRate} className="mt-2 h-2.5 bg-slate-200" indicatorClassName="bg-emerald-500" />
-                <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-slate-500">
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.submittedCount}</div>
-                    <div>{copy.submittedLabel}</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.inProgressCount}</div>
-                    <div>{copy.inProgressLabel}</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.needsReviewCount}</div>
-                    <div>{copy.needsReviewLabel}</div>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-slate-500">{assignment.dueLabel}</div>
-              </div>
-            ))}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <ClassFocusPanel copy={copy} snapshots={classesNeedingSupport.slice(0, 5)} onOpenLeaf={onOpenLeaf} />
+            <SchoolHealthPanel copy={copy} schools={schoolsByAttention} />
           </div>
-        </DashboardSectionCard>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <DashboardSectionCard title={copy.interventionTitle} description={copy.interventionDescription}>
-          <div className="space-y-3">
-            {interventionQueue.map((item) => (
-              <div key={item.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">
-                      {item.studentName} • {item.className}
-                    </div>
-                    <div className="mt-1 text-sm leading-6 text-slate-500">{item.issue}</div>
-                  </div>
-                  <DashboardStatusBadge
-                    label={copy.urgency[item.urgency]}
-                    tone={item.urgency === "high" ? "danger" : item.urgency === "medium" ? "warning" : "outline"}
-                  />
-                </div>
-                <div className="mt-3 text-xs text-slate-500">
-                  {item.schoolName} • {item.impact}
-                </div>
-              </div>
-            ))}
+        </>
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)]">
+            <SchoolHealthPanel copy={copy} schools={schoolsByAttention} showDetails />
+            <ClassFocusPanel copy={copy} snapshots={classesNeedingSupport.slice(0, 5)} onOpenLeaf={onOpenLeaf} compact />
           </div>
-        </DashboardSectionCard>
-
-        <DashboardSectionCard title={copy.riskBoardTitle} description={copy.riskBoardDescription} action={<Button variant="outline" onClick={() => onOpenLeaf("class-reports")}>{copy.openCompetition}</Button>}>
-          <div className="space-y-3">
-            {riskiestClasses.map((snapshot, index) => (
-              <div key={snapshot.id} className="flex items-center gap-4 rounded-[22px] border border-slate-200 bg-white p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
-                  {index + 1}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {snapshot.className} • {snapshot.schoolName}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {snapshot.riskStudents} {copy.studentsNeedSupport} • {snapshot.competitionPoints} {copy.competitionPoints}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-950">{snapshot.completionRate}%</div>
-                  <div className="text-xs text-slate-500">{copy.completionLabel}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </DashboardSectionCard>
-      </div>
+          <ClassListPanel copy={copy} snapshots={filteredSnapshots} onOpenLeaf={onOpenLeaf} />
+        </>
+      )}
     </DashboardPageShell>
   );
 }
 
+function SummaryStrip({ items }: { items: Array<{ label: string; value: string; detail: string }> }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{item.label}</div>
+          <div className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{item.value}</div>
+          <div className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TodayActionPanel({
+  copy,
+  items,
+  onOpenLeaf,
+}: {
+  copy: OverviewCopy;
+  items: InterventionItem[];
+  onOpenLeaf: (leafId: string) => void;
+}) {
+  return (
+    <DashboardSectionCard
+      title={copy.todayActionsTitle}
+      description={copy.todayActionsDescription}
+      action={<Button variant="outline" onClick={() => onOpenLeaf("class-students")}>{copy.openStudentList}</Button>}
+    >
+      <div className="space-y-3">
+        {items.map((item) => (
+          <article key={item.id} className="rounded-[22px] border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-950">{item.studentName}</h3>
+                  <span className="text-sm text-slate-300">/</span>
+                  <span className="text-sm font-medium text-slate-600">{item.className}</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.issue}</p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  {item.schoolName} - {item.impact}
+                </p>
+              </div>
+              <DashboardStatusBadge label={copy.urgency[item.urgency]} tone={getUrgencyTone(item.urgency)} />
+            </div>
+          </article>
+        ))}
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function AssignmentRunPanel({ copy }: { copy: OverviewCopy }) {
+  return (
+    <DashboardSectionCard title={copy.assignmentTitle} description={copy.assignmentDescription}>
+      <div className="space-y-3">
+        {assignmentRuns.map((assignment) => (
+          <article key={assignment.id} className="rounded-[22px] border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="line-clamp-2 text-sm font-semibold leading-6 text-slate-950">{assignment.title}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {assignment.subjectLabel} - {assignment.targetLevel}
+                </p>
+              </div>
+              <Badge tone={assignment.needsReviewCount > 12 ? "warning" : "outline"}>{assignment.dueLabel}</Badge>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-slate-600">{copy.completionLabel}</span>
+              <span className="font-semibold text-slate-950">{assignment.completionRate}%</span>
+            </div>
+            <ProgressBar value={assignment.completionRate} className="mt-2 h-2 bg-slate-200" indicatorClassName={getProgressClass(assignment.completionRate)} />
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <MiniStat label={copy.submittedLabel} value={String(assignment.submittedCount)} />
+              <MiniStat label={copy.inProgressLabel} value={String(assignment.inProgressCount)} />
+              <MiniStat label={copy.needsReviewLabel} value={String(assignment.needsReviewCount)} tone={assignment.needsReviewCount > 12 ? "danger" : "default"} />
+            </div>
+          </article>
+        ))}
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function SchoolHealthPanel({
+  copy,
+  schools,
+  showDetails = false,
+}: {
+  copy: OverviewCopy;
+  schools: ClassroomSchool[];
+  showDetails?: boolean;
+}) {
+  return (
+    <DashboardSectionCard title={copy.schoolHealthTitle} description={copy.schoolHealthDescription}>
+      <div className="space-y-3">
+        {schools.map((school) => (
+          <article key={school.id} className="rounded-[22px] border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">{school.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {copy.schoolPrincipal}: {school.principal}
+                </p>
+              </div>
+              <DashboardStatusBadge label={copy.schoolStatus(school.flaggedStudents)} tone={school.flaggedStudents > 28 ? "warning" : "success"} />
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <MiniStat label={copy.classroomsLabel} value={String(school.activeClasses)} />
+              <MiniStat label={copy.completionLabel} value={`${school.completionRate}%`} />
+              <MiniStat label={copy.studentsNeedSupport} value={String(school.flaggedStudents)} tone={school.flaggedStudents > 28 ? "danger" : "default"} />
+            </div>
+            {showDetails ? (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-600">{copy.averageScoreLabel}</span>
+                  <span className="font-semibold text-slate-950">{school.averageScore}</span>
+                </div>
+                <ProgressBar value={school.completionRate} className="mt-2 h-2 bg-slate-200" indicatorClassName={getProgressClass(school.completionRate)} />
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function ClassFocusPanel({
+  compact = false,
+  copy,
+  onOpenLeaf,
+  snapshots,
+}: {
+  compact?: boolean;
+  copy: OverviewCopy;
+  onOpenLeaf: (leafId: string) => void;
+  snapshots: ClassroomSnapshot[];
+}) {
+  return (
+    <DashboardSectionCard
+      title={copy.classFocusTitle}
+      description={copy.classFocusDescription}
+      action={<Button variant="outline" onClick={() => onOpenLeaf("class-reports")}>{copy.openClassReports}</Button>}
+    >
+      <div className="space-y-3">
+        {snapshots.map((snapshot) => (
+          <ClassRow key={snapshot.id} compact={compact} copy={copy} snapshot={snapshot} />
+        ))}
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function ClassListPanel({
+  copy,
+  onOpenLeaf,
+  snapshots,
+}: {
+  copy: OverviewCopy;
+  onOpenLeaf: (leafId: string) => void;
+  snapshots: ClassroomSnapshot[];
+}) {
+  return (
+    <DashboardSectionCard
+      title={copy.classListTitle}
+      description={copy.classListDescription}
+      action={<Button onClick={() => onOpenLeaf("class-students")}>{copy.openStudentList}</Button>}
+    >
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="hidden grid-cols-[minmax(0,1.3fr)_120px_120px_120px_130px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 lg:grid">
+          <span>{copy.classTable.className}</span>
+          <span>{copy.classTable.students}</span>
+          <span>{copy.classTable.assignments}</span>
+          <span>{copy.classTable.completion}</span>
+          <span>{copy.classTable.support}</span>
+        </div>
+        <div className="divide-y divide-slate-200">
+          {snapshots.map((snapshot) => (
+            <article key={snapshot.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1.3fr)_120px_120px_120px_130px] lg:items-center">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">{snapshot.className}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {snapshot.schoolName} - {snapshot.gradeLabel} - {snapshot.homeroomTeacher}
+                </p>
+              </div>
+              <CompactCell label={copy.classTable.students} value={String(snapshot.studentCount)} />
+              <CompactCell label={copy.classTable.assignments} value={String(snapshot.activeAssignments)} />
+              <CompactCell label={copy.classTable.completion} value={`${snapshot.completionRate}%`} />
+              <div>
+                <span className="font-medium text-slate-500 lg:hidden">{copy.classTable.support}: </span>
+                <DashboardStatusBadge label={`${snapshot.riskStudents} ${copy.studentsNeedSupport}`} tone={snapshot.riskStudents > 5 ? "warning" : "outline"} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function ClassRow({
+  compact,
+  copy,
+  snapshot,
+}: {
+  compact?: boolean;
+  copy: OverviewCopy;
+  snapshot: ClassroomSnapshot;
+}) {
+  return (
+    <article className="rounded-[22px] border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">{snapshot.className}</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {snapshot.schoolName} - {snapshot.gradeLabel} - {snapshot.homeroomTeacher}
+          </p>
+        </div>
+        <DashboardStatusBadge label={`${snapshot.riskStudents} ${copy.studentsNeedSupport}`} tone={snapshot.riskStudents > 5 ? "warning" : "outline"} />
+      </div>
+      <div className="mt-4 flex items-center justify-between text-sm">
+        <span className="font-medium text-slate-600">{copy.completionLabel}</span>
+        <span className="font-semibold text-slate-950">{snapshot.completionRate}%</span>
+      </div>
+      <ProgressBar value={snapshot.completionRate} className="mt-2 h-2 bg-slate-200" indicatorClassName={getProgressClass(snapshot.completionRate)} />
+      {!compact ? (
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <MiniStat label={copy.classroomsStudentCount} value={String(snapshot.studentCount)} />
+          <MiniStat label={copy.activeAssignmentsLabel} value={String(snapshot.activeAssignments)} />
+          <MiniStat label={copy.lastActivityLabel} value={snapshot.lastSubmissionAt} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function MiniStat({
+  label,
+  tone = "default",
+  value,
+}: {
+  label: string;
+  tone?: "default" | "danger";
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-2">
+      <div className={cn("text-sm font-semibold text-slate-950", tone === "danger" && "text-rose-700")}>{value}</div>
+      <div className="mt-0.5 text-xs text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+function CompactCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="text-sm font-semibold text-slate-950">
+      <span className="font-medium text-slate-500 lg:hidden">{label}: </span>
+      {value}
+    </div>
+  );
+}
+
+function getProgressClass(value: number) {
+  if (value >= 86) return "bg-emerald-500";
+  if (value >= 78) return "bg-amber-500";
+  return "bg-rose-500";
+}
+
+function getUrgencyTone(urgency: InterventionItem["urgency"]): BadgeTone {
+  if (urgency === "high") return "danger";
+  if (urgency === "medium") return "warning";
+  return "outline";
+}
+
+type OverviewCopy = typeof enCopy;
+
 const viCopy = {
-  centerBadge: "Learning ops",
-  schoolBadge: "School pulse",
+  centerBadge: "Điều hành",
+  schoolBadge: "Toàn cảnh",
   centerDescription:
-    "Bảng điều hành tổng hợp cho giáo viên và tổ trưởng: theo dõi tiến độ làm bài, chất lượng nộp bài và những điểm nghẽn cần can thiệp ngay.",
+    "Tập trung vào việc cần xử lý hôm nay: bài đang chạy, học sinh cần nhắc và lớp có dấu hiệu chậm nhịp.",
   schoolDescription:
-    "So sánh nhanh hiệu suất theo trường và lớp để nhìn ra nơi đang chậm nhịp, nơi đang bứt tốc và nhóm học sinh cần hỗ trợ thêm.",
+    "Nhìn nhanh tình hình trường và lớp: cơ sở nào ổn, lớp nào cần hỗ trợ, và nên đi vào danh sách nào tiếp theo.",
   allClusters: "Tất cả cụm",
-  openQuestionBank: "Mở ngân hàng câu hỏi",
-  openQuizStudio: "Mở quiz editor",
-  openCompetition: "Xem bảng thi đua",
-  metrics: {
-    activeStudents: "Học sinh đang hoạt động",
-    activeStudentsDetail: (count: number) => `${count} cơ sở đang được theo dõi realtime`,
-    activeStudentsDelta: "Nhịp học duy trì tốt trong ca tối",
-    completion: "Tỷ lệ hoàn thành",
-    completionDetail: "Tính trên toàn bộ bài đang mở trong ngày.",
-    completionDelta: "+4 điểm so với đầu tuần",
-    averageScore: "Điểm trung bình",
-    averageScoreDetail: "Theo bài đã nộp và được chấm tự động.",
-    averageScoreDelta: "Mặt bằng khối 6 đang dẫn nhịp",
-    flagged: "Học sinh cần hỗ trợ",
-    flaggedDetail: "Nhóm chậm mở bài, bỏ dở hoặc rơi điểm mạnh.",
-    flaggedDelta: "Ưu tiên xử lý trước 20:30",
+  openQuestionBank: "Ngân hàng câu hỏi",
+  openSchoolOverview: "Toàn cảnh trường/lớp",
+  openLearningOps: "Điều hành học tập",
+  openQuizStudio: "Tạo quiz",
+  openStudentList: "Học sinh",
+  openClassReports: "Báo cáo lớp",
+  summary: {
+    openAssignments: "Bài đang mở",
+    openAssignmentsHint: "Theo dõi các bài còn ảnh hưởng tới tiến độ hôm nay.",
+    needsSupport: "Cần hỗ trợ",
+    needsSupportHint: "Học sinh/lớp nên được nhắc hoặc kiểm tra thêm.",
+    completion: "Hoàn thành",
+    completionHint: "Tỷ lệ trung bình trong phạm vi đang chọn.",
+    scope: "Phạm vi",
+    scopeHint: (count: number) => `${count} cơ sở đang được theo dõi.`,
+    schools: "Trường",
+    schoolHint: "Cơ sở trong phạm vi đang chọn.",
+    classes: "Lớp",
+    classHint: "Tổng số lớp đang hoạt động.",
+    averageScore: "Điểm TB",
+    averageScoreHint: "Điểm trung bình theo bài đã nộp.",
   },
-  schoolBoardTitle: "Toàn cảnh theo trường",
-  schoolBoardDescription: "So sánh nhanh chất lượng vận hành của từng cơ sở trong cùng một cụm.",
-  classPulseTitle: "Nhiệt độ theo lớp",
-  classPulseDescription: "Đi sâu vào lớp đang chạy bài để xem chất lượng nộp và điểm rơi hỗ trợ.",
+  todayActionsTitle: "Cần xử lý hôm nay",
+  todayActionsDescription: "Chỉ giữ những việc giáo viên nên xử lý trước để lớp không rớt nhịp.",
+  assignmentTitle: "Bài đang mở",
+  assignmentDescription: "Theo dõi bài nào sắp quá hạn, bài nào còn nhiều học sinh đang làm hoặc cần chấm.",
+  schoolHealthTitle: "Tình hình trường",
+  schoolHealthDescription: "Một dòng cho mỗi cơ sở, tập trung vào lớp, hoàn thành và số học sinh cần hỗ trợ.",
+  classFocusTitle: "Lớp cần chú ý",
+  classFocusDescription: "Các lớp có nhiều học sinh cần hỗ trợ hoặc tỷ lệ hoàn thành chưa tốt.",
+  classListTitle: "Danh sách lớp",
+  classListDescription: "Toàn bộ lớp trong phạm vi đang chọn, hiển thị dạng bảng gọn để giáo viên dễ dò.",
   schoolPrincipal: "Phụ trách",
-  teacherLabel: "Giáo viên chủ nhiệm",
-  classroomsLabel: "lớp",
-  activeAssignmentsLabel: "bài đang mở",
-  pointsLabel: "điểm",
+  schoolStatus: (count: number): string => (count > 28 ? "Cần theo sát" : "Ổn định"),
+  classroomsLabel: "Lớp",
+  classroomsStudentCount: "Học sinh",
+  activeAssignmentsLabel: "Bài mở",
+  studentsNeedSupport: "cần hỗ trợ",
   completionLabel: "Hoàn thành",
-  overdueLabel: "Cần chú ý",
-  pendingAssignments: "bài chậm hoặc quá hạn",
-  studentsNeedSupport: "học sinh cần hỗ trợ",
+  averageScoreLabel: "Điểm trung bình",
+  submittedLabel: "Đã nộp",
+  inProgressLabel: "Đang làm",
+  needsReviewLabel: "Cần chấm",
   lastActivityLabel: "Nhịp gần nhất",
-  schoolSummaryHint: "Ổn định trong 24 giờ",
-  schoolConsistencyHint: "Theo cadence nộp bài toàn trường",
-  lastSubmissionHint: "Phiên nộp gần nhất của lớp",
-  assignmentTitle: "Bài tập đang chạy",
-  assignmentDescription: "Nhìn nhanh bài nào đang có tỷ lệ hoàn thành tốt, bài nào sắp trễ hạn hoặc cần review thêm.",
-  submittedLabel: "đã nộp",
-  inProgressLabel: "đang làm",
-  needsReviewLabel: "cần review",
-  interventionTitle: "Danh sách can thiệp ngay",
-  interventionDescription: "Những trường hợp có tác động trực tiếp đến tiến độ lớp hoặc trải nghiệm học sinh.",
   urgency: {
     high: "Ưu tiên cao",
     medium: "Theo dõi sát",
     low: "Nhắc nhẹ",
   },
-  riskBoardTitle: "Lớp cần kéo nhịp",
-  riskBoardDescription: "Nhóm lớp có completion thấp hoặc nhiều học sinh rơi khỏi nhịp thi đua.",
-  competitionPoints: "điểm thi đua",
+  classTable: {
+    className: "Lớp",
+    students: "Học sinh",
+    assignments: "Bài mở",
+    completion: "Hoàn thành",
+    support: "Hỗ trợ",
+  },
 };
 
 const enCopy = {
   centerBadge: "Learning ops",
-  schoolBadge: "School pulse",
+  schoolBadge: "School overview",
   centerDescription:
-    "An operational dashboard for teachers and academic leads to track assignment progress, submission quality, and the bottlenecks that need intervention now.",
+    "Focus on today's work: live assignments, students to nudge, and classes that are slowing down.",
   schoolDescription:
-    "Compare schools and classes quickly to spot slow groups, fast movers, and the learners who need closer support.",
+    "Scan school and class health quickly: which campuses are steady, which classes need support, and where to go next.",
   allClusters: "All clusters",
-  openQuestionBank: "Open question bank",
-  openQuizStudio: "Open quiz editor",
-  openCompetition: "Open leaderboard",
-  metrics: {
-    activeStudents: "Active students",
-    activeStudentsDetail: (count: number) => `${count} campuses tracked in real time`,
-    activeStudentsDelta: "Healthy evening-learning rhythm",
-    completion: "Completion rate",
-    completionDetail: "Measured across all live assignments today.",
-    completionDelta: "+4 pts versus the start of the week",
-    averageScore: "Average score",
-    averageScoreDetail: "Based on submitted work with auto-grading.",
-    averageScoreDelta: "Grade 6 is setting the pace",
-    flagged: "Students needing support",
-    flaggedDetail: "Students who did not start, dropped mid-way, or lost momentum.",
-    flaggedDelta: "Prioritize before 8:30 PM",
+  openQuestionBank: "Question bank",
+  openSchoolOverview: "School overview",
+  openLearningOps: "Learning ops",
+  openQuizStudio: "Create quiz",
+  openStudentList: "Students",
+  openClassReports: "Class reports",
+  summary: {
+    openAssignments: "Open work",
+    openAssignmentsHint: "Assignments still affecting today's progress.",
+    needsSupport: "Need support",
+    needsSupportHint: "Students or classes that should be nudged.",
+    completion: "Completion",
+    completionHint: "Average completion in the selected scope.",
+    scope: "Scope",
+    scopeHint: (count: number) => `${count} campuses currently tracked.`,
+    schools: "Schools",
+    schoolHint: "Campuses in the selected scope.",
+    classes: "Classes",
+    classHint: "Total active classes.",
+    averageScore: "Avg score",
+    averageScoreHint: "Average score from submitted work.",
   },
-  schoolBoardTitle: "School comparison",
-  schoolBoardDescription: "A quick operational comparison across campuses in the same cluster.",
-  classPulseTitle: "Class pulse",
-  classPulseDescription: "A deeper view into the classes that are currently running assignments.",
+  todayActionsTitle: "Needs action today",
+  todayActionsDescription: "Only the items teachers should handle first so the class rhythm does not slip.",
+  assignmentTitle: "Open assignments",
+  assignmentDescription: "Track what is nearing deadline, still in progress, or waiting for review.",
+  schoolHealthTitle: "School health",
+  schoolHealthDescription: "One row per campus, focused on classes, completion, and support volume.",
+  classFocusTitle: "Classes to watch",
+  classFocusDescription: "Classes with more support needs or weaker completion.",
+  classListTitle: "Class list",
+  classListDescription: "All classes in the selected scope, shown as a compact table for quick scanning.",
   schoolPrincipal: "Lead",
-  teacherLabel: "Homeroom teacher",
-  classroomsLabel: "classes",
-  activeAssignmentsLabel: "live assignments",
-  pointsLabel: "pts",
+  schoolStatus: (count: number): string => (count > 28 ? "Watch closely" : "Stable"),
+  classroomsLabel: "Classes",
+  classroomsStudentCount: "Students",
+  activeAssignmentsLabel: "Open work",
+  studentsNeedSupport: "need support",
   completionLabel: "Completion",
-  overdueLabel: "Needs attention",
-  pendingAssignments: "late or overdue items",
-  studentsNeedSupport: "students need support",
+  averageScoreLabel: "Average score",
+  submittedLabel: "Submitted",
+  inProgressLabel: "In progress",
+  needsReviewLabel: "Review",
   lastActivityLabel: "Latest rhythm",
-  schoolSummaryHint: "Stable in the last 24 hours",
-  schoolConsistencyHint: "Based on school-wide submission cadence",
-  lastSubmissionHint: "Latest class submission window",
-  assignmentTitle: "Live assignment run",
-  assignmentDescription: "See which assignments are healthy, which are nearing deadline, and which need more review capacity.",
-  submittedLabel: "submitted",
-  inProgressLabel: "in progress",
-  needsReviewLabel: "needs review",
-  interventionTitle: "Immediate intervention queue",
-  interventionDescription: "Cases that directly affect class momentum or learner experience.",
   urgency: {
     high: "High priority",
     medium: "Watch closely",
     low: "Gentle reminder",
   },
-  riskBoardTitle: "Classes to pull forward",
-  riskBoardDescription: "Classes with weaker completion or more students falling out of the competition rhythm.",
-  competitionPoints: "competition pts",
+  classTable: {
+    className: "Class",
+    students: "Students",
+    assignments: "Open work",
+    completion: "Completion",
+    support: "Support",
+  },
 };

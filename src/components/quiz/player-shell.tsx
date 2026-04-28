@@ -420,7 +420,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
   if (!started) {
     return (
-      <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <section
           className={`flex flex-col rounded-[32px] border p-3 shadow-[var(--erg-shadow-lg)] ${playerViewportClass}`}
           style={playerCardStyle}
@@ -433,13 +433,13 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
             <div className="grid h-full overflow-auto gap-6 p-6 sm:p-10 lg:grid-cols-[minmax(340px,1fr)_minmax(280px,0.9fr)] lg:p-12">
               <div className="flex flex-col justify-center gap-4">
                 <p className="text-2xl font-extrabold sm:text-3xl" style={{ color: "var(--quiz-accent-start)" }}>
-                  {quiz.subtitle}
+                  {readyQuiz.subtitle}
                 </p>
                 <h1
                   className="max-w-[720px] text-4xl font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl"
                   style={{ color: "var(--quiz-accent-end)" }}
                 >
-                  {quiz.title}
+                  {readyQuiz.title}
                 </h1>
                 <p className="text-2xl font-extrabold sm:text-3xl" style={{ color: "var(--quiz-option-text)" }}>
                   Bấm &quot;Bắt đầu&quot; để bắt đầu làm bài.
@@ -458,12 +458,6 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                     </span>
                   )}
                 </div>
-                <ul className="grid gap-2 text-lg leading-8 sm:text-[22px]" style={{ color: "var(--quiz-option-text)" }}>
-                  <li>Lecture: Nguyen Phat Tai</li>
-                  <li>Tong Thanh Nhan</li>
-                  <li>Nguyen Hoang Minh</li>
-                  <li>Tran Hoang Trinh</li>
-                </ul>
               </div>
 
               <div
@@ -479,7 +473,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                   <strong className="text-4xl font-black leading-none sm:text-[42px]" style={{ color: "var(--quiz-accent-end)" }}>
                     {isTrainingMode ? "Học theo bước" : "Làm bài đánh giá"}
                   </strong>
-                  <span className="text-base font-bold text-slate-600">Version {quiz.version}</span>
+                  <span className="text-base font-bold text-slate-600">Version {readyQuiz.version}</span>
                 </div>
                 <div className="absolute right-10 top-24 h-60 w-60 rounded-full bg-[rgb(255_255_255_/_0.12)] blur-sm sm:h-[312px] sm:w-[312px]" />
                 <div className="absolute bottom-14 right-6 h-32 w-60 rotate-[-22deg] rounded-full bg-[rgb(204_0_34_/_0.3)] blur-sm sm:h-44 sm:w-80" />
@@ -516,7 +510,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   }
 
   return (
-    <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <QuizThemeSurface quiz={readyQuiz} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
       <section
         className={`flex min-w-0 flex-col rounded-[32px] border p-3 shadow-[var(--erg-shadow-lg)] ${playerViewportClass}`}
         style={playerCardStyle}
@@ -568,70 +562,28 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
             {attemptCompleted && !reviewingSubmittedAttempt ? null : (
               <>
-            {false ? (
-              <div className="mb-5 overflow-hidden rounded-[26px] border border-slate-200 bg-white/90 shadow-[0_14px_28px_rgba(26,44,64,0.09)]">
-                <div className="flex items-center justify-between px-4 py-3 text-sm font-black text-white" style={accentButtonStyle}>
-                  <span>Kết quả bài làm</span>
-                  <span>{readyAttempt.passed ? "Đạt" : "Chưa đạt"}</span>
+                <QuestionRenderer
+                  question={readyQuestion}
+                  value={draftAnswer}
+                  onChange={handleDraftChange}
+                  submitted={submitted}
+                  reviewMode={submitted}
+                  result={lastResult}
+                />
+
+                {lastResult ? <QuestionFeedbackPanel result={lastResult} /> : null}
+
+                {submitted && readyQuestion.kind === "hotspot" ? <AnswerKeyCard question={readyQuestion} /> : null}
+
+                {isTrainingMode && submitted && !isLastQuestion ? (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-bold text-slate-500 shadow-[0_8px_20px_rgba(26,44,64,0.08)]">
+                    Đang chuyển sang câu tiếp theo...
+                  </div>
+                ) : null}
+
+                <div className="pointer-events-none absolute bottom-4 right-6 text-xl font-extrabold opacity-30 sm:text-2xl" style={{ color: "var(--quiz-option-text)" }}>
+                  ERG E-LEARNING
                 </div>
-                <div className="grid gap-3 px-4 py-4 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
-                  <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Điểm</div>
-                    <div className="mt-1 text-xl font-black text-slate-900">
-                      {readyAttempt.totalScore}/{readyAttempt.maxScore}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Tỷ lệ</div>
-                    <div className="mt-1 text-xl font-black text-slate-900">{readyAttempt.percent}%</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Đã nộp</div>
-                    <div className="mt-1 text-xl font-black text-slate-900">
-                      {readyAttempt.submittedCount}/{readyAttempt.totalQuestions}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Mục tiêu</div>
-                    <div className="mt-1 text-xl font-black text-slate-900">{readyQuiz.settings.passPercent}%</div>
-                  </div>
-                </div>
-                <div className="border-t border-slate-100 px-4 py-4">
-                  <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.min(100, readyAttempt.percent)}%`,
-                        background: "linear-gradient(135deg, var(--quiz-accent-start), var(--quiz-accent-end))",
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <QuestionRenderer
-              question={readyQuestion}
-              value={draftAnswer}
-              onChange={handleDraftChange}
-              submitted={submitted}
-              reviewMode={submitted}
-              result={lastResult}
-            />
-
-            {lastResult ? <QuestionFeedbackPanel result={lastResult} /> : null}
-
-            {submitted && readyQuestion.kind === "hotspot" ? <AnswerKeyCard question={readyQuestion} /> : null}
-
-            {isTrainingMode && submitted && !isLastQuestion ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-bold text-slate-500 shadow-[0_8px_20px_rgba(26,44,64,0.08)]">
-                Đang chuyển sang câu tiếp theo...
-              </div>
-            ) : null}
-
-            <div className="pointer-events-none absolute bottom-4 right-6 text-xl font-extrabold opacity-30 sm:text-2xl" style={{ color: "var(--quiz-option-text)" }}>
-              ERG E-LEARNING
-            </div>
               </>
             )}
           </div>
@@ -702,8 +654,8 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                 <button
                   className={navButtonClass}
                   style={accentButtonStyle}
-                type="button"
-                disabled={submitting}
+                  type="button"
+                  disabled={submitting}
                   onClick={handleRequestSubmit}
                 >
                   {submitting ? "ĐANG NỘP..." : "NỘP BÀI"}

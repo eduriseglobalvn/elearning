@@ -1,39 +1,57 @@
 import { useMemo, useState } from "react";
-import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
-import TimerOutlinedIcon from "@mui/icons-material/TimerOutlined";
+import SchoolOutlinedIcon from "@mui/icons-material/SchoolOutlined";
 
-import { DashboardMetricCard, DashboardPageShell, DashboardSectionCard, DashboardSegmentedControl, DashboardStatusBadge } from "@/components/dashboard/dashboard-page-shell";
-import { Button, ProgressBar } from "@/components/ui/dashboard-kit";
-import { useI18n } from "@/features/i18n";
+import {
+  DashboardPageShell,
+  DashboardSectionCard,
+} from "@/components/dashboard/dashboard-page-shell";
+import { Badge, Button, ProgressBar } from "@/components/ui/dashboard-kit";
 import {
   assignmentRuns,
   classroomSchools,
   defaultSchoolId,
   getSchoolSnapshots,
 } from "@/features/classroom/api/mock-classroom-data";
+import type { AssignmentRun, ClassroomSnapshot } from "@/features/classroom/types/classroom-types";
 import type { DashboardLeaf } from "@/features/dashboard/types/dashboard-types";
+import { useI18n } from "@/features/i18n";
+import { cn } from "@/lib/utils";
 
 export function ClassroomTrackingWorkspace({
   activeLeaf,
   onOpenLeaf,
+  onSelectClass,
+  selectedClassId,
+  selectedSchoolId,
 }: {
   activeLeaf: DashboardLeaf;
   onOpenLeaf: (leafId: string) => void;
+  onSelectClass: (classId: string) => void;
+  selectedClassId: string;
+  selectedSchoolId: string;
 }) {
   const { locale } = useI18n();
   const copy = locale === "vi" ? viCopy : enCopy;
-  const [schoolId, setSchoolId] = useState(defaultSchoolId);
+  const [selectedSubject, setSelectedSubject] = useState("all");
 
+  const schoolId = selectedSchoolId || defaultSchoolId;
   const school = classroomSchools.find((item) => item.id === schoolId) ?? classroomSchools[0];
   const schoolClasses = useMemo(() => getSchoolSnapshots(schoolId), [schoolId]);
+  const selectedClass = schoolClasses.find((item) => item.id === selectedClassId) ?? schoolClasses[0];
+  const subjectOptions = useMemo(
+    () => Array.from(new Set(assignmentRuns.map((assignment) => assignment.subjectLabel))),
+    [],
+  );
+  const totalSupport = schoolClasses.reduce((sum, item) => sum + item.riskStudents, 0);
   const highlightedAssignments = useMemo(
     () =>
       assignmentRuns
-        .filter((assignment) => assignment.targetLevel === schoolClasses[0]?.gradeLabel || assignment.activeClasses >= 4)
+        .filter((assignment) => selectedSubject === "all" || assignment.subjectLabel === selectedSubject)
+        .filter((assignment) => assignment.targetLevel === selectedClass?.gradeLabel || assignment.activeClasses >= 4)
         .slice(0, 3),
-    [schoolClasses],
+    [selectedClass?.gradeLabel, selectedSubject],
   );
 
   return (
@@ -44,10 +62,14 @@ export function ClassroomTrackingWorkspace({
       breadcrumbs={activeLeaf.breadcrumb}
       actions={
         <>
-          <DashboardSegmentedControl
-            options={classroomSchools.map((item) => ({ value: item.id, label: item.name }))}
-            value={schoolId}
-            onChange={setSchoolId}
+          <SelectControl
+            ariaLabel={copy.subjectSelectLabel}
+            value={selectedSubject}
+            onChange={setSelectedSubject}
+            options={[
+              { value: "all", label: copy.allSubjects },
+              ...subjectOptions.map((subject) => ({ value: subject, label: subject })),
+            ]}
           />
           <Button variant="outline" onClick={() => onOpenLeaf("class-students")}>
             {copy.openStudents}
@@ -55,194 +77,407 @@ export function ClassroomTrackingWorkspace({
         </>
       }
     >
-      <div className="grid gap-4 xl:grid-cols-4">
-        <DashboardMetricCard
-          label={copy.metrics.school}
-          value={school?.name ?? "-"}
-          detail={`${copy.schoolLead}: ${school?.principal ?? "-"}`}
-          delta={copy.metrics.schoolDelta}
-          icon={<ApartmentOutlinedIcon fontSize="inherit" />}
-        />
-        <DashboardMetricCard
-          label={copy.metrics.classes}
-          value={`${schoolClasses.length}`}
-          detail={copy.metrics.classesDetail}
-          delta={copy.metrics.classesDelta}
-          icon={<GroupOutlinedIcon fontSize="inherit" />}
-          tone="emerald"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.liveAssignments}
-          value={`${highlightedAssignments.length}`}
-          detail={copy.metrics.liveAssignmentsDetail}
-          delta={copy.metrics.liveAssignmentsDelta}
-          icon={<AssignmentTurnedInOutlinedIcon fontSize="inherit" />}
-          tone="amber"
-        />
-        <DashboardMetricCard
-          label={copy.metrics.nextDeadline}
-          value={schoolClasses[0]?.lastSubmissionAt ?? "-"}
-          detail={copy.metrics.nextDeadlineDetail}
-          delta={copy.metrics.nextDeadlineDelta}
-          icon={<TimerOutlinedIcon fontSize="inherit" />}
-          tone="rose"
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <DashboardSectionCard title={copy.classesTitle} description={copy.classesDescription}>
-          <div className="space-y-3">
-            {schoolClasses.map((snapshot) => (
-              <div key={snapshot.id} className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="text-base font-semibold text-slate-950">{snapshot.className}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {snapshot.gradeLabel} • {copy.teacherLabel}: {snapshot.homeroomTeacher}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DashboardStatusBadge label={`${snapshot.activeAssignments} ${copy.assignmentsLabel}`} tone="outline" />
-                    <DashboardStatusBadge label={`${snapshot.riskStudents} ${copy.supportLabel}`} tone={snapshot.riskStudents >= 5 ? "warning" : "secondary"} />
-                  </div>
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
+        <div className="space-y-4">
+          <div className="rounded-[28px] border border-slate-200/80 bg-white/95 p-5 shadow-[0_20px_48px_-30px_rgba(15,23,42,0.35)]">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <SchoolOutlinedIcon fontSize="small" />
+                  <span>{copy.campusTitle}</span>
                 </div>
-
-                <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {copy.completionLabel}
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{snapshot.completionRate}%</div>
-                    <ProgressBar value={snapshot.completionRate} className="mt-2 h-2.5 bg-slate-200" indicatorClassName="bg-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {copy.averageScoreLabel}
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{snapshot.averageScore}</div>
-                    <div className="mt-1 text-xs text-slate-500">{copy.autoGradedHint}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {copy.lastSubmissionLabel}
-                    </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">{snapshot.lastSubmissionAt}</div>
-                    <div className="mt-1 text-xs text-slate-500">{copy.liveHeartbeatHint}</div>
-                  </div>
-                </div>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{school.name}</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {copy.schoolLead}: {school.principal}
+                </p>
               </div>
-            ))}
-          </div>
-        </DashboardSectionCard>
 
-        <DashboardSectionCard title={copy.scheduleTitle} description={copy.scheduleDescription} action={<Button variant="outline" onClick={() => onOpenLeaf("assessment-control")}>{copy.openAssignmentCenter}</Button>}>
-          <div className="space-y-3">
-            {highlightedAssignments.map((assignment) => (
-              <div key={assignment.id} className="rounded-[22px] border border-slate-200 bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">{assignment.title}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {assignment.subjectLabel} • {assignment.targetLevel}
-                    </div>
-                  </div>
-                  <DashboardStatusBadge label={assignment.dueLabel} tone="outline" />
-                </div>
-                <div className="mt-4 text-sm font-semibold text-slate-900">{assignment.completionRate}%</div>
-                <ProgressBar value={assignment.completionRate} className="mt-2 h-2.5 bg-slate-200" indicatorClassName="bg-emerald-500" />
-                <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-slate-500">
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.submittedCount}</div>
-                    <div>{copy.submittedLabel}</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.inProgressCount}</div>
-                    <div>{copy.inProgressLabel}</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{assignment.needsReviewCount}</div>
-                    <div>{copy.reviewLabel}</div>
-                  </div>
-                </div>
+              <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[420px]">
+                <CampusStat label={copy.statClasses} value={`${schoolClasses.length}`} />
+                <CampusStat label={copy.statStudents} value={`${school.activeStudents}`} />
+                <CampusStat label={copy.statSupport} value={`${totalSupport}`} tone={totalSupport > 10 ? "warning" : "default"} />
               </div>
-            ))}
+            </div>
           </div>
-        </DashboardSectionCard>
-      </div>
+
+          <DashboardSectionCard title={copy.classesTitle} description={copy.classesDescription}>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {schoolClasses.map((snapshot, index) => (
+                <ClassroomCard
+                  key={snapshot.id}
+                  copy={copy}
+                  index={index}
+                  isSelected={selectedClass?.id === snapshot.id}
+                  onAssign={() => {
+                    onSelectClass(snapshot.id);
+                    onOpenLeaf("class-students");
+                  }}
+                  onOpenStudents={() => {
+                    onSelectClass(snapshot.id);
+                    onOpenLeaf("class-students");
+                  }}
+                  onSelect={() => onSelectClass(snapshot.id)}
+                  snapshot={snapshot}
+                />
+              ))}
+            </div>
+          </DashboardSectionCard>
+        </div>
+
+        <aside className="space-y-4">
+          {selectedClass ? (
+            <SelectedClassPanel
+              copy={copy}
+              onAssign={() => onOpenLeaf("class-students")}
+              onOpenStudents={() => onOpenLeaf("class-students")}
+              snapshot={selectedClass}
+            />
+          ) : null}
+
+          <DashboardSectionCard
+            title={copy.scheduleTitle}
+            description={copy.scheduleDescription}
+            action={
+              <Button size="sm" variant="outline" onClick={() => onOpenLeaf("class-students")}>
+                {copy.openAssignmentCenter}
+              </Button>
+            }
+          >
+            <div className="space-y-3">
+              {highlightedAssignments.map((assignment) => (
+                <AssignmentCard key={assignment.id} assignment={assignment} copy={copy} />
+              ))}
+            </div>
+          </DashboardSectionCard>
+        </aside>
+      </section>
     </DashboardPageShell>
   );
 }
 
+function CampusStat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "warning";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3",
+        tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-950",
+      )}
+    >
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-[-0.04em]">{value}</div>
+    </div>
+  );
+}
+
+function SelectControl({
+  ariaLabel,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+}) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      className="h-11 min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+      onChange={(event) => onChange(event.target.value)}
+      value={value}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ClassroomCard({
+  copy,
+  index,
+  isSelected,
+  onAssign,
+  onOpenStudents,
+  onSelect,
+  snapshot,
+}: {
+  copy: ClassroomCopy;
+  index: number;
+  isSelected: boolean;
+  onAssign: () => void;
+  onOpenStudents: () => void;
+  onSelect: () => void;
+  snapshot: ClassroomSnapshot;
+}) {
+  const attention = getClassAttention(snapshot, copy);
+
+  return (
+    <article
+      className={cn(
+        "overflow-hidden rounded-[24px] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_-30px_rgba(15,23,42,0.55)]",
+        isSelected ? "border-blue-300 ring-4 ring-blue-100" : "border-slate-200",
+      )}
+    >
+      <button type="button" className="block w-full text-left" onClick={onSelect}>
+        <div className={cn("h-2", getClassAccent(index))} />
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-xl font-semibold tracking-[-0.04em] text-slate-950">{snapshot.className}</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {snapshot.gradeLabel} • {snapshot.homeroomTeacher}
+              </p>
+            </div>
+            <Badge tone={attention.tone}>{attention.label}</Badge>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <MiniMetric label={copy.studentsLabel} value={`${snapshot.studentCount}`} />
+            <MiniMetric label={copy.assignmentsLabel} value={`${snapshot.activeAssignments}`} />
+            <MiniMetric label={copy.averageScoreLabel} value={`${snapshot.averageScore}`} />
+          </div>
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-slate-600">{copy.completionLabel}</span>
+              <span className="font-semibold text-slate-950">{snapshot.completionRate}%</span>
+            </div>
+            <ProgressBar
+              value={snapshot.completionRate}
+              className="mt-2 h-2 bg-slate-100"
+              indicatorClassName={attention.progressClassName}
+            />
+          </div>
+        </div>
+      </button>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3">
+        <div className="text-sm text-slate-500">
+          {copy.lastSubmissionLabel}: <span className="font-medium text-slate-700">{snapshot.lastSubmissionAt}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={onOpenStudents}>
+            {copy.studentsAction}
+          </Button>
+          <Button size="sm" onClick={onAssign}>
+            {copy.assignAction}
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-2">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function SelectedClassPanel({
+  copy,
+  onAssign,
+  onOpenStudents,
+  snapshot,
+}: {
+  copy: ClassroomCopy;
+  onAssign: () => void;
+  onOpenStudents: () => void;
+  snapshot: ClassroomSnapshot;
+}) {
+  const attention = getClassAttention(snapshot, copy);
+
+  return (
+    <DashboardSectionCard title={copy.focusTitle} description={copy.focusDescription}>
+      <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{snapshot.className}</div>
+            <div className="mt-1 text-sm text-slate-500">
+              {snapshot.gradeLabel} • {copy.teacherLabel}: {snapshot.homeroomTeacher}
+            </div>
+          </div>
+          <Badge tone={attention.tone}>{attention.label}</Badge>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          <FocusRow icon={<GroupOutlinedIcon fontSize="inherit" />} label={copy.supportLabel} value={`${snapshot.riskStudents}`} />
+          <FocusRow
+            icon={<AssignmentTurnedInOutlinedIcon fontSize="inherit" />}
+            label={copy.assignmentsLabel}
+            value={`${snapshot.activeAssignments}`}
+          />
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium text-slate-600">{copy.completionLabel}</span>
+            <span className="font-semibold text-slate-950">{snapshot.completionRate}%</span>
+          </div>
+          <ProgressBar value={snapshot.completionRate} className="mt-2 h-2 bg-white" indicatorClassName={attention.progressClassName} />
+        </div>
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <Button variant="outline" onClick={onOpenStudents}>
+            {copy.studentsAction}
+          </Button>
+          <Button onClick={onAssign}>{copy.assignAction}</Button>
+        </div>
+      </div>
+    </DashboardSectionCard>
+  );
+}
+
+function FocusRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3">
+      <div className="flex items-center gap-3 text-sm font-medium text-slate-600">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-blue-50 text-blue-700">{icon}</span>
+        {label}
+      </div>
+      <span className="text-lg font-semibold text-slate-950">{value}</span>
+    </div>
+  );
+}
+
+function AssignmentCard({ assignment, copy }: { assignment: AssignmentRun; copy: ClassroomCopy }) {
+  return (
+    <article className="rounded-[22px] border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950">{assignment.title}</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {assignment.subjectLabel} • {assignment.targetLevel}
+          </p>
+        </div>
+        <Badge tone="outline">{assignment.completionRate}%</Badge>
+      </div>
+      <ProgressBar value={assignment.completionRate} className="mt-4 h-2 bg-slate-100" indicatorClassName="bg-blue-600" />
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span>
+          <strong className="text-slate-950">{assignment.submittedCount}</strong> {copy.submittedLabel}
+        </span>
+        <span>
+          <strong className="text-slate-950">{assignment.needsReviewCount}</strong> {copy.reviewLabel}
+        </span>
+      </div>
+      <div className="mt-3 text-xs font-medium text-slate-500">{assignment.dueLabel}</div>
+    </article>
+  );
+}
+
+function getClassAttention(snapshot: ClassroomSnapshot, copy: ClassroomCopy) {
+  if (snapshot.riskStudents >= 5 || snapshot.completionRate < 82) {
+    return {
+      label: copy.statusNeedsCare,
+      progressClassName: "bg-amber-500",
+      tone: "warning" as const,
+    };
+  }
+
+  if (snapshot.completionRate >= 88) {
+    return {
+      label: copy.statusOnTrack,
+      progressClassName: "bg-emerald-500",
+      tone: "success" as const,
+    };
+  }
+
+  return {
+    label: copy.statusSteady,
+    progressClassName: "bg-blue-600",
+    tone: "secondary" as const,
+  };
+}
+
+function getClassAccent(index: number) {
+  const accents = ["bg-blue-600", "bg-emerald-500", "bg-amber-500", "bg-violet-500"];
+  return accents[index % accents.length];
+}
+
+type ClassroomCopy = typeof enCopy;
+
 const viCopy = {
-  badge: "Classroom tracking",
-  description:
-    "Theo dõi tình hình lớp theo từng cơ sở: lớp nào đang đúng nhịp, lớp nào sắp trễ hạn và lớp nào cần giáo viên can thiệp ngay trong ngày.",
-  openStudents: "Mở quản lý học sinh",
-  openAssignmentCenter: "Mở lịch giao bài",
+  badge: "Lớp học",
+  description: "Theo dõi từng lớp theo kiểu Google Classroom: lớp nào ổn, lớp nào cần nhắc, và hành động tiếp theo là gì.",
+  openStudents: "Học sinh & bài tập",
+  openAssignmentCenter: "Học sinh & bài tập",
+  classSelectLabel: "Chọn lớp",
+  subjectSelectLabel: "Chọn môn học",
+  allSubjects: "Tất cả môn",
   schoolLead: "Phụ trách",
-  metrics: {
-    school: "Cơ sở đang theo dõi",
-    schoolDelta: "Có thể đổi nhanh theo cơ sở",
-    classes: "Lớp đang chạy",
-    classesDetail: "Các lớp có assignment mở trong ngày.",
-    classesDelta: "Tập trung vào lớp cùng một cơ sở",
-    liveAssignments: "Bài tập đang mở",
-    liveAssignmentsDetail: "Chỉ hiển thị những assignment còn tác động tới tiến độ.",
-    liveAssignmentsDelta: "Ưu tiên bài sắp hết hạn",
-    nextDeadline: "Nhịp nộp gần nhất",
-    nextDeadlineDetail: "Dùng để quan sát lớp có bị đứng nhịp không.",
-    nextDeadlineDelta: "Theo heartbeat nộp bài của lớp đầu bảng",
-  },
-  classesTitle: "Tình hình lớp đang vận hành",
-  classesDescription: "Mỗi thẻ đại diện cho một lớp và trạng thái assignment đang chạy trong cơ sở đã chọn.",
-  teacherLabel: "Giáo viên chủ nhiệm",
-  assignmentsLabel: "bài mở",
-  supportLabel: "cần hỗ trợ",
+  campusTitle: "Cơ sở đang xem",
+  statClasses: "Lớp",
+  statStudents: "Học sinh",
+  statSupport: "Cần hỗ trợ",
+  classesTitle: "Lớp đang dạy",
+  classesDescription: "Mỗi thẻ là một lớp. Chọn lớp để xem nhanh tình trạng và thao tác chính.",
+  focusTitle: "Lớp đang chọn",
+  focusDescription: "Chỉ giữ các chỉ số cần quyết định ngay.",
+  scheduleTitle: "Bài đang mở",
+  scheduleDescription: "Các bài ảnh hưởng trực tiếp tới tiến độ lớp.",
+  teacherLabel: "Giáo viên",
+  studentsLabel: "Học sinh",
+  assignmentsLabel: "Bài mở",
+  supportLabel: "Cần hỗ trợ",
+  averageScoreLabel: "Điểm TB",
   completionLabel: "Hoàn thành",
-  averageScoreLabel: "Điểm trung bình",
-  autoGradedHint: "Theo phần đã chấm tự động",
-  lastSubmissionLabel: "Lần nộp gần nhất",
-  liveHeartbeatHint: "Dùng để phát hiện lớp đang chậm nhịp",
-  scheduleTitle: "Bài tập cần giữ nhịp",
-  scheduleDescription: "Những assignment cần giáo viên nhìn sát để tránh hụt completion vào cuối ngày.",
+  lastSubmissionLabel: "Nộp gần nhất",
+  studentsAction: "Học sinh",
+  assignAction: "Giao bài",
+  statusNeedsCare: "Cần chú ý",
+  statusOnTrack: "Đúng nhịp",
+  statusSteady: "Ổn định",
   submittedLabel: "đã nộp",
-  inProgressLabel: "đang làm",
-  reviewLabel: "chờ review",
+  reviewLabel: "chờ duyệt",
 };
 
 const enCopy = {
-  badge: "Classroom tracking",
-  description:
-    "Track class health by campus: which classes are on rhythm, which are nearing deadline, and which need same-day teacher intervention.",
-  openStudents: "Open student management",
-  openAssignmentCenter: "Open assignment center",
+  badge: "Classroom",
+  description: "Track each class like Google Classroom: what is healthy, what needs a nudge, and what action comes next.",
+  openStudents: "Students & assignments",
+  openAssignmentCenter: "Students & assignments",
+  classSelectLabel: "Select class",
+  subjectSelectLabel: "Select subject",
+  allSubjects: "All subjects",
   schoolLead: "Lead",
-  metrics: {
-    school: "Tracked campus",
-    schoolDelta: "Switch quickly across campuses",
-    classes: "Live classes",
-    classesDetail: "Classes with assignments open today.",
-    classesDelta: "Focus on a single campus at a time",
-    liveAssignments: "Live assignments",
-    liveAssignmentsDetail: "Only assignments still affecting progress are shown.",
-    liveAssignmentsDelta: "Prioritize those nearing deadline",
-    nextDeadline: "Latest submission rhythm",
-    nextDeadlineDetail: "Used to detect classes losing pace.",
-    nextDeadlineDelta: "Based on the leading class heartbeat",
-  },
-  classesTitle: "Operational class health",
-  classesDescription: "Each card represents a class and the assignment flow currently running in the selected campus.",
-  teacherLabel: "Homeroom teacher",
-  assignmentsLabel: "live items",
-  supportLabel: "need support",
+  campusTitle: "Current campus",
+  statClasses: "Classes",
+  statStudents: "Students",
+  statSupport: "Need support",
+  classesTitle: "Teaching classes",
+  classesDescription: "Each card is one class. Select a class to see its status and next actions.",
+  focusTitle: "Selected class",
+  focusDescription: "Only the signals needed for a same-day decision.",
+  scheduleTitle: "Open assignments",
+  scheduleDescription: "Assignments that directly affect class progress.",
+  teacherLabel: "Teacher",
+  studentsLabel: "Students",
+  assignmentsLabel: "Open work",
+  supportLabel: "Need support",
+  averageScoreLabel: "Avg score",
   completionLabel: "Completion",
-  averageScoreLabel: "Average score",
-  autoGradedHint: "Based on auto-graded work",
-  lastSubmissionLabel: "Latest submission",
-  liveHeartbeatHint: "Useful for detecting lost momentum",
-  scheduleTitle: "Assignments to hold steady",
-  scheduleDescription: "Assignments that need closer teacher attention to avoid end-of-day completion drops.",
+  lastSubmissionLabel: "Latest",
+  studentsAction: "Students",
+  assignAction: "Assign",
+  statusNeedsCare: "Needs care",
+  statusOnTrack: "On track",
+  statusSteady: "Steady",
   submittedLabel: "submitted",
-  inProgressLabel: "in progress",
-  reviewLabel: "awaiting review",
+  reviewLabel: "to review",
 };

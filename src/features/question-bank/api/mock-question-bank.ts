@@ -1,336 +1,456 @@
 import type {
+  QuestionBankCategory,
+  QuestionBankDifficulty,
   QuestionBankQuestion,
+  QuestionBankStatus,
   QuestionBankSubject,
   QuestionBankSubjectId,
+  QuizBankItem,
+  QuizBankKind,
 } from "@/features/question-bank/types/question-bank-types";
+import type { QuestionType } from "@/features/quiz-editor/types/quiz-editor-types";
+import type { ContentScope } from "@/types/scope-types";
+
+const globalScope: ContentScope = { type: "global" };
+const alphaScope: ContentScope = {
+  type: "center",
+  centerId: "school-erg-alpha",
+  centerName: "ERG Alpha Campus",
+};
+const eastScope: ContentScope = {
+  type: "center",
+  centerId: "school-erg-east",
+  centerName: "ERG East Learning Point",
+};
+
+const ic3Gs6Levels = [
+  {
+    id: "ic3-l1",
+    label: "Level 1",
+    description: "Nền tảng máy tính",
+    topics: [
+      "Thiết bị và hệ điều hành",
+      "Quản lý tệp",
+      "Gõ phím và nhập liệu",
+      "Internet an toàn",
+      "Email cơ bản",
+      "Word căn bản",
+      "Ôn tập level 1",
+    ],
+  },
+  {
+    id: "ic3-l2",
+    label: "Level 2",
+    description: "Ứng dụng văn phòng",
+    topics: [
+      "Word nâng cao",
+      "Excel nhập môn",
+      "Công thức Excel",
+      "PowerPoint",
+      "Làm việc nhóm online",
+      "Tìm kiếm thông tin",
+      "Ôn tập level 2",
+    ],
+  },
+  {
+    id: "ic3-l3",
+    label: "Level 3",
+    description: "Năng lực số IC3",
+    topics: [
+      "Bảo mật tài khoản",
+      "Dữ liệu và biểu đồ",
+      "Tư duy thuật toán",
+      "Bản quyền số",
+      "Thuyết trình dự án",
+      "Kiểm tra mô phỏng IC3",
+      "Ôn tập level 3",
+    ],
+  },
+] as const;
+
+const ic3Categories: QuestionBankCategory[] = ic3Gs6Levels.flatMap((level) =>
+  level.topics.map((topic, topicIndex) => ({
+    id: `${level.id}-topic-${topicIndex + 1}`,
+    label: topic,
+    levelId: level.id,
+  })),
+);
 
 export const questionBankSubjects: QuestionBankSubject[] = [
   {
-    id: "mathematics",
-    label: "Toán học",
-    categories: [
-      { id: "fractions", label: "Phân số" },
-      { id: "geometry", label: "Hình học" },
-      { id: "statistics", label: "Thống kê" },
-    ],
+    id: "ic3-gs6",
+    label: "IC3 GS6",
+    description: "3 level, mỗi level gồm nhiều chủ đề kỹ năng số.",
+    companyScopeLabel: "Dùng chung toàn công ty",
+    levels: ic3Gs6Levels.map((level) => ({
+      id: level.id,
+      label: level.label,
+      description: level.description,
+      categoryIds: ic3Categories.filter((category) => category.levelId === level.id).map((category) => category.id),
+    })),
+    categories: ic3Categories,
+  },
+  createLegacySubject("mathematics", "Toán học", ["Phân số", "Hình học", "Thống kê"]),
+  createLegacySubject("english", "Tiếng Anh", ["Reading", "Grammar", "Vocabulary"]),
+  createLegacySubject("science", "Khoa học", ["Sinh học", "Vật lý", "Trái đất"]),
+];
+
+const ic3QuestionBlueprints: Array<{
+  levelId: string;
+  categoryIndex: number;
+  stem: string;
+  objective: string;
+  type: QuestionType;
+  difficulty: QuestionBankDifficulty;
+  status: QuestionBankStatus;
+  answer?: string;
+}> = [
+  {
+    levelId: "ic3-l1",
+    categoryIndex: 0,
+    stem: "Thiết bị nào dùng để nhập dữ liệu chữ vào máy tính?",
+    objective: "Nhận biết thiết bị nhập liệu cơ bản.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "Bàn phím",
   },
   {
-    id: "english",
-    label: "Tiếng Anh",
-    categories: [
-      { id: "reading", label: "Reading" },
-      { id: "grammar", label: "Grammar" },
-      { id: "vocabulary", label: "Vocabulary" },
-    ],
+    levelId: "ic3-l1",
+    categoryIndex: 1,
+    stem: "Khi muốn đổi tên một tệp, thao tác nào là phù hợp nhất?",
+    objective: "Thực hiện thao tác quản lý tệp an toàn.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "Rename",
   },
   {
-    id: "science",
-    label: "Khoa học",
-    categories: [
-      { id: "biology", label: "Sinh học" },
-      { id: "physics", label: "Vật lý" },
-      { id: "earth", label: "Trái đất" },
-    ],
+    levelId: "ic3-l1",
+    categoryIndex: 3,
+    stem: "Dấu hiệu nào cho thấy một website đang dùng kết nối an toàn?",
+    objective: "Nhận diện kết nối an toàn khi truy cập Internet.",
+    type: "multiple-choice",
+    difficulty: "stretch",
+    status: "ready",
+    answer: "Biểu tượng ổ khóa và HTTPS",
   },
   {
-    id: "informatics",
-    label: "Tin học",
-    categories: [
-      { id: "digital-safety", label: "An toàn số" },
-      { id: "spreadsheets", label: "Bảng tính" },
-      { id: "logic", label: "Tư duy thuật toán" },
-    ],
+    levelId: "ic3-l1",
+    categoryIndex: 5,
+    stem: "Trong Word, tính năng nào giúp căn đều hai lề đoạn văn?",
+    objective: "Sử dụng định dạng đoạn văn cơ bản.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "reviewing",
+    answer: "Justify",
+  },
+  {
+    levelId: "ic3-l2",
+    categoryIndex: 0,
+    stem: "Trong Word, mục lục tự động thường dựa vào thành phần nào?",
+    objective: "Hiểu cách dùng heading để tạo mục lục.",
+    type: "multiple-choice",
+    difficulty: "stretch",
+    status: "ready",
+    answer: "Heading styles",
+  },
+  {
+    levelId: "ic3-l2",
+    categoryIndex: 1,
+    stem: "Trong Excel, ô A1 chứa 10 và A2 chứa 15. Công thức nào tính tổng hai ô?",
+    objective: "Dùng công thức tính toán cơ bản trong bảng tính.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "=SUM(A1:A2)",
+  },
+  {
+    levelId: "ic3-l2",
+    categoryIndex: 2,
+    stem: "Hàm nào dùng để tìm giá trị lớn nhất trong một vùng dữ liệu Excel?",
+    objective: "Nhận biết hàm thống kê thông dụng.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "MAX",
+  },
+  {
+    levelId: "ic3-l2",
+    categoryIndex: 4,
+    stem: "Khi làm việc nhóm online, hành vi nào giúp giảm nhầm lẫn phiên bản tài liệu?",
+    objective: "Áp dụng nguyên tắc cộng tác tài liệu trực tuyến.",
+    type: "multiple-response",
+    difficulty: "stretch",
+    status: "pilot",
+    answer: "Đặt tên phiên bản rõ ràng; bình luận thay vì ghi đè",
+  },
+  {
+    levelId: "ic3-l3",
+    categoryIndex: 0,
+    stem: "Yếu tố nào làm mật khẩu mạnh hơn?",
+    objective: "Áp dụng nguyên tắc bảo mật tài khoản.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "Dài, có chữ hoa, chữ thường, số và ký tự đặc biệt",
+  },
+  {
+    levelId: "ic3-l3",
+    categoryIndex: 1,
+    stem: "Biểu đồ cột phù hợp nhất khi cần làm gì?",
+    objective: "Chọn biểu đồ phù hợp với mục tiêu trình bày dữ liệu.",
+    type: "multiple-choice",
+    difficulty: "core",
+    status: "ready",
+    answer: "So sánh các nhóm dữ liệu",
+  },
+  {
+    levelId: "ic3-l3",
+    categoryIndex: 2,
+    stem: "Sắp xếp các bước: xác định bài toán, viết thuật toán, chạy thử, sửa lỗi.",
+    objective: "Hiểu trình tự tư duy thuật toán cơ bản.",
+    type: "sequence",
+    difficulty: "challenge",
+    status: "ready",
+    answer: "Xác định bài toán → viết thuật toán → chạy thử → sửa lỗi",
+  },
+  {
+    levelId: "ic3-l3",
+    categoryIndex: 5,
+    stem: "Một bài kiểm tra mô phỏng IC3 nên ưu tiên điều gì?",
+    objective: "Hiểu mục tiêu của bài test mô phỏng năng lực.",
+    type: "multiple-choice",
+    difficulty: "challenge",
+    status: "reviewing",
+    answer: "Đo đúng năng lực theo từng mục tiêu kỹ năng",
   },
 ];
 
+const ic3Questions: QuestionBankQuestion[] = ic3QuestionBlueprints.map((item, index) => {
+  const level = questionBankSubjects[0].levels.find((entry) => entry.id === item.levelId) ?? questionBankSubjects[0].levels[0];
+  const categories = questionBankSubjects[0].categories.filter((category) => category.levelId === item.levelId);
+  const category = categories[item.categoryIndex] ?? categories[0];
+
+  return {
+    id: `qb-ic3-${String(index + 1).padStart(3, "0")}`,
+    scope: index % 5 === 3 ? alphaScope : globalScope,
+    subjectId: "ic3-gs6",
+    subjectLabel: "IC3 GS6",
+    levelId: level.id,
+    levelLabel: level.label,
+    categoryId: category.id,
+    categoryLabel: category.label,
+    gradeLabel: "Khối 6",
+    type: item.type,
+    difficulty: item.difficulty,
+    status: item.status,
+    stem: item.stem,
+    objective: item.objective,
+    tags: ["IC3 GS6", level.label, category.label],
+    masteryRate: 62 + ((index * 7) % 33),
+    usageCount: 18 + index * 5,
+    schoolsUsing: 3 + (index % 7),
+    lastUsedAt: index % 2 === 0 ? "Hôm nay, 10:20" : "Hôm qua, 16:40",
+    recommendedCluster: index % 3 === 0 ? "Cụm Trung tâm" : index % 3 === 1 ? "Cụm Đông Bắc" : "Cụm Nam Sài Gòn",
+    answer: item.answer,
+    rationale: item.answer ? `Đáp án trọng tâm: ${item.answer}.` : undefined,
+    choices: createDefaultChoices(item.answer),
+  };
+});
+
 export const questionBankQuestions: QuestionBankQuestion[] = [
-  {
-    id: "qb-math-001",
-    subjectId: "mathematics",
-    categoryId: "fractions",
-    subjectLabel: "Toán học",
-    categoryLabel: "Phân số",
-    gradeLabel: "Khối 6",
-    type: "multiple-choice",
-    difficulty: "core",
+  ...ic3Questions,
+  createLegacyQuestion("qb-math-001", "mathematics", "Phân số", "Lan ăn 3/8 chiếc bánh và Minh ăn 1/4 chiếc bánh. Tổng cộng hai bạn đã ăn bao nhiêu chiếc bánh?", "Cộng hai phân số khác mẫu số cơ bản.", "core", 82, globalScope),
+  createLegacyQuestion("qb-math-002", "mathematics", "Hình học", "Một hình chữ nhật có chiều dài 12 cm và chiều rộng 7 cm. Chu vi của hình là bao nhiêu?", "Tính chu vi hình chữ nhật.", "stretch", 76, alphaScope),
+  createLegacyQuestion("qb-eng-001", "english", "Reading", "Mai walks to school every day because it is near her house. Why does Mai walk to school?", "Xác định thông tin trực tiếp trong câu đọc hiểu ngắn.", "core", 88, alphaScope),
+  createLegacyQuestion("qb-sci-001", "science", "Sinh học", "Bộ phận nào của cây có vai trò hút nước và muối khoáng từ đất?", "Nhận biết chức năng cơ bản của rễ cây.", "core", 91, eastScope),
+];
+
+export const quizBankItems: QuizBankItem[] = [
+  createQuizBankItem({
+    id: "quiz-ic3-l1-foundation-train",
+    title: "IC3 GS6 L1 - Train nền tảng máy tính",
+    kind: "train",
+    levelId: "ic3-l1",
+    questionIds: ["qb-ic3-001", "qb-ic3-002", "qb-ic3-003", "qb-ic3-004"],
+    durationLabel: "20 phút",
+    sourceMode: "auto-random",
     status: "ready",
-    stem: "Lan ăn 3/8 chiếc bánh và Minh ăn 1/4 chiếc bánh. Tổng cộng hai bạn đã ăn bao nhiêu chiếc bánh?",
-    objective: "Cộng hai phân số khác mẫu số cơ bản.",
-    tags: ["Phân số", "Khối 6", "Kiểm tra nhanh"],
-    masteryRate: 82,
-    usageCount: 38,
-    schoolsUsing: 7,
-    lastUsedAt: "Hôm nay, 08:40",
-    recommendedCluster: "Cụm Trung tâm",
-    rationale: "Quy đồng 1/4 thành 2/8, sau đó cộng 3/8 + 2/8.",
-    choices: [
-      { id: "a", label: "5/8", correct: true },
-      { id: "b", label: "4/8", correct: false },
-      { id: "c", label: "7/12", correct: false },
-      { id: "d", label: "1/2", correct: false },
-    ],
-  },
-  {
-    id: "qb-math-002",
-    subjectId: "mathematics",
-    categoryId: "geometry",
-    subjectLabel: "Toán học",
-    categoryLabel: "Hình học",
-    gradeLabel: "Khối 7",
-    type: "numeric",
-    difficulty: "stretch",
+    scope: globalScope,
+  }),
+  createQuizBankItem({
+    id: "quiz-ic3-l2-excel-test",
+    title: "IC3 GS6 L2 - Test Excel nhập môn",
+    kind: "test",
+    levelId: "ic3-l2",
+    questionIds: ["qb-ic3-006", "qb-ic3-007"],
+    durationLabel: "15 phút",
+    sourceMode: "manual",
     status: "ready",
-    stem: "Một hình chữ nhật có chiều dài 12 cm và chiều rộng 7 cm. Chu vi của hình là bao nhiêu?",
-    objective: "Tính chu vi hình chữ nhật.",
-    tags: ["Hình học", "Khối 7", "Chu vi"],
-    masteryRate: 76,
-    usageCount: 29,
-    schoolsUsing: 5,
-    lastUsedAt: "Hôm qua, 16:20",
-    recommendedCluster: "Cụm Đông Bắc",
-    answer: "38",
-    rationale: "Chu vi hình chữ nhật bằng (dài + rộng) x 2.",
-  },
-  {
-    id: "qb-math-003",
-    subjectId: "mathematics",
-    categoryId: "statistics",
-    subjectLabel: "Toán học",
-    categoryLabel: "Thống kê",
-    gradeLabel: "Khối 8",
-    type: "true-false",
-    difficulty: "core",
+    scope: alphaScope,
+  }),
+  createQuizBankItem({
+    id: "quiz-ic3-l3-security-train",
+    title: "IC3 GS6 L3 - Train bảo mật tài khoản",
+    kind: "train",
+    levelId: "ic3-l3",
+    questionIds: ["qb-ic3-009", "qb-ic3-010", "qb-ic3-011"],
+    durationLabel: "25 phút",
+    sourceMode: "auto-random",
+    status: "draft",
+    scope: globalScope,
+  }),
+  createQuizBankItem({
+    id: "quiz-ic3-l3-mock-test",
+    title: "IC3 GS6 L3 - Test mô phỏng cuối level",
+    kind: "test",
+    levelId: "ic3-l3",
+    questionIds: ["qb-ic3-009", "qb-ic3-010", "qb-ic3-011", "qb-ic3-012"],
+    durationLabel: "30 phút",
+    sourceMode: "manual",
     status: "reviewing",
-    stem: "Phát biểu sau đúng hay sai: Trung vị luôn bằng trung bình cộng.",
-    objective: "Phân biệt trung vị và trung bình cộng.",
-    tags: ["Thống kê", "Khối 8", "Khái niệm"],
-    masteryRate: 61,
-    usageCount: 14,
-    schoolsUsing: 4,
-    lastUsedAt: "2 ngày trước",
-    recommendedCluster: "Cụm Nam Sài Gòn",
-    answer: "Sai",
-    rationale: "Trung vị và trung bình cộng chỉ trùng nhau trong một số tập dữ liệu đặc biệt.",
-  },
-  {
-    id: "qb-eng-001",
-    subjectId: "english",
-    categoryId: "reading",
-    subjectLabel: "Tiếng Anh",
-    categoryLabel: "Reading",
-    gradeLabel: "Khối 6",
-    type: "multiple-choice",
-    difficulty: "core",
-    status: "ready",
-    stem: "Read the sentence: 'Mai walks to school every day because it is near her house.' Why does Mai walk to school?",
-    objective: "Xác định thông tin trực tiếp trong câu đọc hiểu ngắn.",
-    tags: ["Reading", "Daily routine", "Starter"],
-    masteryRate: 88,
-    usageCount: 46,
-    schoolsUsing: 8,
-    lastUsedAt: "Hôm nay, 10:05",
-    recommendedCluster: "Cụm Trung tâm",
-    choices: [
-      { id: "a", label: "Because she likes running.", correct: false },
-      { id: "b", label: "Because the school is near her house.", correct: true },
-      { id: "c", label: "Because her bike is broken.", correct: false },
-      { id: "d", label: "Because her friends walk with her.", correct: false },
-    ],
-  },
-  {
-    id: "qb-eng-002",
-    subjectId: "english",
-    categoryId: "grammar",
-    subjectLabel: "Tiếng Anh",
-    categoryLabel: "Grammar",
-    gradeLabel: "Khối 7",
-    type: "fill-in-the-blanks",
-    difficulty: "stretch",
-    status: "ready",
-    stem: "Complete the sentence: 'If she ___ enough time, she will finish the project tonight.'",
-    objective: "Nhận diện mệnh đề if loại 1.",
-    tags: ["Grammar", "If clause", "Khối 7"],
-    masteryRate: 69,
-    usageCount: 24,
-    schoolsUsing: 6,
-    lastUsedAt: "3 ngày trước",
-    recommendedCluster: "Cụm Đông Bắc",
-    answer: "has",
-    rationale: "Mệnh đề if loại 1 dùng hiện tại đơn ở mệnh đề if.",
-  },
-  {
-    id: "qb-eng-003",
-    subjectId: "english",
-    categoryId: "vocabulary",
-    subjectLabel: "Tiếng Anh",
-    categoryLabel: "Vocabulary",
-    gradeLabel: "Khối 6",
-    type: "multiple-response",
-    difficulty: "core",
-    status: "pilot",
-    stem: "Select all words that describe positive study habits.",
-    objective: "Mở rộng vốn từ về thói quen học tập.",
-    tags: ["Vocabulary", "Study skills", "Multiple select"],
-    masteryRate: 72,
-    usageCount: 18,
-    schoolsUsing: 3,
-    lastUsedAt: "Tuần trước",
-    recommendedCluster: "Cụm Nam Sài Gòn",
-    choices: [
-      { id: "a", label: "organized", correct: true },
-      { id: "b", label: "careless", correct: false },
-      { id: "c", label: "curious", correct: true },
-      { id: "d", label: "lazy", correct: false },
-    ],
-  },
-  {
-    id: "qb-sci-001",
-    subjectId: "science",
-    categoryId: "biology",
-    subjectLabel: "Khoa học",
-    categoryLabel: "Sinh học",
-    gradeLabel: "Khối 6",
-    type: "multiple-choice",
-    difficulty: "core",
-    status: "ready",
-    stem: "Bộ phận nào của cây có vai trò hút nước và muối khoáng từ đất?",
-    objective: "Nhận biết chức năng cơ bản của rễ cây.",
-    tags: ["Sinh học", "Thực vật", "Cơ bản"],
-    masteryRate: 91,
-    usageCount: 40,
-    schoolsUsing: 7,
-    lastUsedAt: "Hôm nay, 09:30",
-    recommendedCluster: "Cụm Trung tâm",
-    choices: [
-      { id: "a", label: "Lá", correct: false },
-      { id: "b", label: "Hoa", correct: false },
-      { id: "c", label: "Rễ", correct: true },
-      { id: "d", label: "Quả", correct: false },
-    ],
-  },
-  {
-    id: "qb-sci-002",
-    subjectId: "science",
-    categoryId: "physics",
-    subjectLabel: "Khoa học",
-    categoryLabel: "Vật lý",
-    gradeLabel: "Khối 8",
-    type: "short-answer",
-    difficulty: "stretch",
-    status: "reviewing",
-    stem: "Nêu một ví dụ về lực ma sát có lợi trong đời sống hằng ngày.",
-    objective: "Liên hệ kiến thức lực ma sát với thực tế.",
-    tags: ["Vật lý", "Ứng dụng", "Tự luận ngắn"],
-    masteryRate: 66,
-    usageCount: 17,
-    schoolsUsing: 4,
-    lastUsedAt: "2 ngày trước",
-    recommendedCluster: "Cụm Đông Bắc",
-    answer: "Ví dụ: ma sát giữa lốp xe và mặt đường giúp xe di chuyển an toàn.",
-  },
-  {
-    id: "qb-sci-003",
-    subjectId: "science",
-    categoryId: "earth",
-    subjectLabel: "Khoa học",
-    categoryLabel: "Trái đất",
-    gradeLabel: "Khối 7",
-    type: "multiple-choice",
-    difficulty: "challenge",
-    status: "ready",
-    stem: "Hiện tượng ngày và đêm trên Trái Đất xảy ra chủ yếu do nguyên nhân nào?",
-    objective: "Hiểu chuyển động tự quay của Trái Đất.",
-    tags: ["Trái đất", "Thiên văn", "Khối 7"],
-    masteryRate: 74,
-    usageCount: 26,
-    schoolsUsing: 6,
-    lastUsedAt: "Hôm qua, 13:10",
-    recommendedCluster: "Cụm Nam Sài Gòn",
-    choices: [
-      { id: "a", label: "Trái Đất quay quanh Mặt Trăng", correct: false },
-      { id: "b", label: "Trái Đất tự quay quanh trục của nó", correct: true },
-      { id: "c", label: "Mặt Trời tự quay quanh Trái Đất", correct: false },
-      { id: "d", label: "Mặt Trăng che ánh sáng Mặt Trời", correct: false },
-    ],
-  },
-  {
-    id: "qb-it-001",
-    subjectId: "informatics",
-    categoryId: "digital-safety",
-    subjectLabel: "Tin học",
-    categoryLabel: "An toàn số",
-    gradeLabel: "Khối 6",
-    type: "multiple-choice",
-    difficulty: "core",
-    status: "ready",
-    stem: "Mật khẩu nào sau đây an toàn hơn cho tài khoản học tập trực tuyến?",
-    objective: "Nhận diện nguyên tắc tạo mật khẩu mạnh.",
-    tags: ["An toàn số", "Password", "Khối 6"],
-    masteryRate: 94,
-    usageCount: 52,
-    schoolsUsing: 9,
-    lastUsedAt: "Hôm nay, 11:12",
-    recommendedCluster: "Cụm Trung tâm",
-    choices: [
-      { id: "a", label: "12345678", correct: false },
-      { id: "b", label: "ngaySinhEm", correct: false },
-      { id: "c", label: "Erg@2026!Learn", correct: true },
-      { id: "d", label: "abcdefg", correct: false },
-    ],
-  },
-  {
-    id: "qb-it-002",
-    subjectId: "informatics",
-    categoryId: "spreadsheets",
-    subjectLabel: "Tin học",
-    categoryLabel: "Bảng tính",
-    gradeLabel: "Khối 7",
-    type: "multiple-choice",
-    difficulty: "stretch",
-    status: "ready",
-    stem: "Trong bảng tính, công thức nào dùng để tính tổng giá trị từ ô B2 đến B8?",
-    objective: "Sử dụng hàm SUM trong bảng tính.",
-    tags: ["Spreadsheet", "Formula", "Khối 7"],
-    masteryRate: 79,
-    usageCount: 31,
-    schoolsUsing: 7,
-    lastUsedAt: "Hôm qua, 17:45",
-    recommendedCluster: "Cụm Đông Bắc",
-    choices: [
-      { id: "a", label: "=SUM(B2:B8)", correct: true },
-      { id: "b", label: "=ADD(B2-B8)", correct: false },
-      { id: "c", label: "=TOTAL(B2:B8)", correct: false },
-      { id: "d", label: "=B2+B8", correct: false },
-    ],
-  },
-  {
-    id: "qb-it-003",
-    subjectId: "informatics",
-    categoryId: "logic",
-    subjectLabel: "Tin học",
-    categoryLabel: "Tư duy thuật toán",
-    gradeLabel: "Khối 8",
-    type: "sequence",
-    difficulty: "challenge",
-    status: "pilot",
-    stem: "Sắp xếp các bước hợp lý để kiểm tra và sửa lỗi trong một thuật toán đơn giản.",
-    objective: "Rèn năng lực tư duy tuần tự và gỡ lỗi.",
-    tags: ["Algorithm", "Sequence", "Khối 8"],
-    masteryRate: 58,
-    usageCount: 9,
-    schoolsUsing: 2,
-    lastUsedAt: "Tuần trước",
-    recommendedCluster: "Cụm Nam Sài Gòn",
-    rationale: "Quan sát đầu vào, chạy thử, xác định bước sai, chỉnh sửa và kiểm tra lại.",
-  },
+    scope: globalScope,
+  }),
 ];
 
 export function getQuestionBankSubject(subjectId: QuestionBankSubjectId) {
   return questionBankSubjects.find((subject) => subject.id === subjectId) ?? questionBankSubjects[0];
 }
 
-export function getQuestionBankCategoryCount(subjectId: QuestionBankSubjectId, categoryId: string) {
+export function getQuestionBankLevel(subjectId: QuestionBankSubjectId, levelId: string) {
+  const subject = getQuestionBankSubject(subjectId);
+  return subject.levels.find((level) => level.id === levelId) ?? subject.levels[0];
+}
+
+export function getQuestionBankCategoryCount(subjectId: QuestionBankSubjectId, categoryId: string, levelId?: string) {
   return questionBankQuestions.filter(
-    (question) => question.subjectId === subjectId && question.categoryId === categoryId,
+    (question) =>
+      question.subjectId === subjectId &&
+      question.categoryId === categoryId &&
+      (!levelId || question.levelId === levelId),
   ).length;
+}
+
+function createLegacySubject(
+  id: Exclude<QuestionBankSubjectId, "ic3-gs6">,
+  label: string,
+  topicLabels: string[],
+): QuestionBankSubject {
+  const levelId = `${id}-other`;
+
+  return {
+    id,
+    label,
+    description: "Nguồn câu hỏi dùng chung chưa gắn lộ trình nhiều level.",
+    companyScopeLabel: "Dùng chung toàn công ty",
+    levels: [{ id: levelId, label: "Khác", description: "Chưa phân level", categoryIds: topicLabels.map((_, index) => `${id}-topic-${index + 1}`) }],
+    categories: topicLabels.map((topic, index) => ({
+      id: `${id}-topic-${index + 1}`,
+      label: topic,
+      levelId,
+    })),
+  };
+}
+
+function createLegacyQuestion(
+  id: string,
+  subjectId: Exclude<QuestionBankSubjectId, "ic3-gs6">,
+  categoryLabel: string,
+  stem: string,
+  objective: string,
+  difficulty: QuestionBankDifficulty,
+  masteryRate: number,
+  scope: ContentScope,
+): QuestionBankQuestion {
+  const subject = getQuestionBankSubject(subjectId);
+  const category = subject.categories.find((item) => item.label === categoryLabel) ?? subject.categories[0];
+  const level = subject.levels[0];
+
+  return {
+    id,
+    scope,
+    subjectId,
+    subjectLabel: subject.label,
+    levelId: level.id,
+    levelLabel: level.label,
+    categoryId: category.id,
+    categoryLabel: category.label,
+    gradeLabel: "Khối 6",
+    type: "multiple-choice",
+    difficulty,
+    status: "ready",
+    stem,
+    objective,
+    tags: [subject.label, category.label],
+    masteryRate,
+    usageCount: 20 + masteryRate % 17,
+    schoolsUsing: 5,
+    lastUsedAt: "Hôm qua, 09:30",
+    recommendedCluster: "Cụm Trung tâm",
+    choices: createDefaultChoices("Đáp án đúng"),
+  };
+}
+
+function createQuizBankItem({
+  id,
+  title,
+  kind,
+  levelId,
+  questionIds,
+  durationLabel,
+  sourceMode,
+  status,
+  scope,
+}: {
+  id: string;
+  title: string;
+  kind: QuizBankKind;
+  levelId: string;
+  questionIds: string[];
+  durationLabel: string;
+  sourceMode: "manual" | "auto-random";
+  status: QuizBankItem["status"];
+  scope: ContentScope;
+}): QuizBankItem {
+  const questions = questionIds
+    .map((questionId) => ic3Questions.find((question) => question.id === questionId))
+    .filter((question): question is QuestionBankQuestion => Boolean(question));
+  const topicLabels = Array.from(new Set(questions.map((question) => question.categoryLabel)));
+  const level = getQuestionBankLevel("ic3-gs6", levelId);
+
+  return {
+    id,
+    scope,
+    title,
+    kind,
+    status,
+    subjectId: "ic3-gs6",
+    subjectLabel: "IC3 GS6",
+    levelId,
+    levelLabel: level.label,
+    topicLabels,
+    questionIds,
+    questionCount: questionIds.length,
+    durationLabel,
+    scopeLabel: getScopeLabel(scope),
+    sourceMode,
+    ownerLabel: "Academic team",
+    updatedAt: "Cập nhật hôm nay",
+  };
+}
+
+function getScopeLabel(scope: ContentScope) {
+  return scope.type === "global" ? "Toàn công ty" : scope.centerName;
+}
+
+function createDefaultChoices(correctAnswer?: string) {
+  if (!correctAnswer) return undefined;
+
+  return [
+    { id: "a", label: correctAnswer, correct: true },
+    { id: "b", label: "Phương án gây nhiễu 1", correct: false },
+    { id: "c", label: "Phương án gây nhiễu 2", correct: false },
+    { id: "d", label: "Phương án gây nhiễu 3", correct: false },
+  ];
 }

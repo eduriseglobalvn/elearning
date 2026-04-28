@@ -1,13 +1,16 @@
 export type DashboardLeafVariant =
+  | "admin-overview"
+  | "admin-centers"
+  | "admin-students"
+  | "admin-sheet-import"
+  | "admin-permissions"
   | "overview"
   | "school-pulse"
   | "question-bank"
+  | "quiz-bank"
   | "quiz-editor"
-  | "classroom-tracking"
   | "class-students"
-  | "assessment-control"
   | "class-reports"
-  | "student-journey"
   | "placeholder";
 
 export type DashboardLeaf = {
@@ -19,6 +22,7 @@ export type DashboardLeaf = {
 };
 
 export type DashboardGroup = {
+  iconKey?: "operations" | "materials" | "classroom" | "docs" | "settings" | "admin";
   title: string;
   items: DashboardLeaf[];
 };

@@ -61,6 +61,7 @@ export function MatchingQuestion({
 
     return [...rowIds].reverse();
   }, [rowIds, value.matchingAssignments, value.matchingOrder]);
+
   const activePair = activeId ? pairMap.get(activeId) ?? null : null;
   const connectedRows = submitted || reviewMode ? rowIds : (value.matchingConnectedRows ?? []);
 
@@ -78,21 +79,37 @@ export function MatchingQuestion({
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveId(null);
-    if (!over) return;
 
     const chipId = String(active.id);
+    const sourceIndex = currentOrder.findIndex((id) => id === chipId);
+    if (sourceIndex === -1) return;
+
+    const sourceRowId = rowIds[sourceIndex];
+
+    if (!over) {
+      // Detach if dropped outside
+      const nextConnectedRows = new Set(connectedRows);
+      if (nextConnectedRows.has(sourceRowId)) {
+        nextConnectedRows.delete(sourceRowId);
+        emit(currentOrder, [...nextConnectedRows]);
+      }
+      return;
+    }
+
     const overId = String(over.id);
     if (!overId.startsWith("row:")) return;
 
-    const sourceIndex = currentOrder.findIndex((id) => id === chipId);
-    const targetIndex = rowIds.findIndex((rowId) => rowId === overId.replace("row:", ""));
-    if (sourceIndex === -1 || targetIndex === -1) return;
+    const targetRowId = overId.replace("row:", "");
+    const targetIndex = rowIds.findIndex((rowId) => rowId === targetRowId);
+    if (targetIndex === -1) return;
 
-    const sourceRowId = rowIds[sourceIndex];
-    const targetRowId = rowIds[targetIndex];
     if (sourceIndex === targetIndex) {
       const nextConnectedRows = new Set(connectedRows);
-      nextConnectedRows.add(targetRowId);
+      if (nextConnectedRows.has(targetRowId)) {
+        nextConnectedRows.delete(targetRowId);
+      } else {
+        nextConnectedRows.add(targetRowId);
+      }
       emit(currentOrder, [...nextConnectedRows]);
       return;
     }
@@ -100,9 +117,11 @@ export function MatchingQuestion({
     const nextOrder = [...currentOrder];
     const [moved] = nextOrder.splice(sourceIndex, 1);
     nextOrder.splice(targetIndex, 0, moved);
+
     const nextConnectedRows = new Set(connectedRows);
     nextConnectedRows.add(targetRowId);
     nextConnectedRows.delete(sourceRowId);
+
     emit(nextOrder, [...nextConnectedRows]);
   }
 

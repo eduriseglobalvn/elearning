@@ -1,14 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { QuizThemeSurface } from "@/components/quiz/quiz-theme-surface";
 import { QuestionRenderer } from "@/components/quiz/question-renderer";
-import { createAttempt, fetchQuiz, submitAnswer, submitAttempt } from "@/lib/api";
+import {
+  buildClientSubmitPayload,
+  createEmptyAttempt,
+  createRuntimeKey,
+  getQuizPackage,
+  gradeFinalAttemptLocally,
+  localQuizAttemptStore,
+  startAttempt,
+  submitFinalAttempt,
+} from "@/features/quiz-runtime";
 import { createInitialAnswer, getAllQuestions, isAnswerComplete, normalizeAnswerForSubmission } from "@/lib/quiz";
-import type { AnswerPayload, AnswerResult, Attempt, Question, Quiz, QuizResultDisplay } from "@/lib/types";
+import type { LocalQuizAttemptSession } from "@/features/quiz-runtime";
+import type { AnswerPayload, AnswerResult, Attempt, Question, Quiz, QuizPackage, QuizResultDisplay } from "@/lib/types";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; quiz: Quiz; attempt: Attempt }
+  | {
+      status: "ready";
+      attempt: Attempt;
+      quizPackage: QuizPackage;
+      restored: boolean;
+      session: LocalQuizAttemptSession;
+    }
   | { status: "error"; message: string };
 
 type SidebarTab = "outline" | "notes";
@@ -34,43 +50,87 @@ const defaultResultDisplay: QuizResultDisplay = {
   confirmNoLabel: "NO",
 };
 
-export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
+export function PlayerShell({
+  assignmentId,
+  quizId = "avs-demo",
+}: {
+  assignmentId?: string;
+  quizId?: string;
+}) {
+  const resolvedAssignmentId = assignmentId ?? quizId;
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [loadRequestId, setLoadRequestId] = useState(0);
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, AnswerPayload>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("outline");
   const [sidebarQuery, setSidebarQuery] = useState("");
   const [submitDialogMode, setSubmitDialogMode] = useState<SubmitDialogMode | null>(null);
   const [reviewingSubmittedAttempt, setReviewingSubmittedAttempt] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  const autoAdvanceRef = useRef<number | null>(null);
-  useEffect(() => {
-    setLoadState({ status: "loading" });
-    setStarted(false);
-    setCurrentIndex(0);
-    setDrafts({});
-    setSubmitting(false);
-    setSidebarTab("outline");
-    setSidebarQuery("");
-    setSubmitDialogMode(null);
-    setReviewingSubmittedAttempt(false);
-    setSessionStartedAt(null);
-    setRemainingSeconds(null);
 
-    if (autoAdvanceRef.current !== null) {
-      window.clearTimeout(autoAdvanceRef.current);
-      autoAdvanceRef.current = null;
-    }
+  useEffect(() => {
+    let cancelled = false;
+
+    window.queueMicrotask(() => {
+      if (cancelled) {
+        return;
+      }
+
+      setLoadState({ status: "loading" });
+      setStarted(false);
+      setCurrentIndex(0);
+      setDrafts({});
+      setSubmitting(false);
+      setSubmitError(null);
+      setSidebarTab("outline");
+      setSidebarQuery("");
+      setSubmitDialogMode(null);
+      setReviewingSubmittedAttempt(false);
+      setSessionStartedAt(null);
+      setRemainingSeconds(null);
+    });
 
     async function load() {
       try {
-        const quiz = await fetchQuiz(quizId);
-        const attempt = await createAttempt(quiz);
-        setLoadState({ status: "ready", quiz, attempt });
+        const quizPackage = await getQuizPackage(quizId);
+        const storedSession = await localQuizAttemptStore.getSession(resolvedAssignmentId, quizId);
+        const reusableSession =
+          storedSession &&
+          storedSession.packageHash === quizPackage.contentHash &&
+          storedSession.quizVersion === quizPackage.quizVersion
+            ? storedSession
+            : null;
+
+        const session = reusableSession ?? (await createFreshLocalSession(resolvedAssignmentId, quizPackage));
+        const attempt =
+          session.status === "submitted"
+            ? gradeFinalAttemptLocally(quizPackage, session.attemptId, session.answers)
+            : createEmptyAttempt(quizPackage, session.attemptId);
+
+        if (cancelled) {
+          return;
+        }
+
+        setDrafts(session.answers);
+        setStarted(session.status === "submitted");
+        setReviewingSubmittedAttempt(false);
+        setSessionStartedAt(Date.parse(session.startedAt));
+        setLoadState({
+          status: "ready",
+          attempt,
+          quizPackage,
+          restored: Boolean(reusableSession && Object.keys(reusableSession.answers).length > 0),
+          session,
+        });
       } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
         setLoadState({
           status: "error",
           message: error instanceof Error ? error.message : "Unable to load quiz.",
@@ -79,17 +139,15 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
     }
 
     void load();
-  }, [quizId]);
 
-  useEffect(() => {
     return () => {
-      if (autoAdvanceRef.current !== null) {
-        window.clearTimeout(autoAdvanceRef.current);
-      }
+      cancelled = true;
     };
-  }, []);
+  }, [loadRequestId, quizId, resolvedAssignmentId]);
 
-  const quiz = loadState.status === "ready" ? loadState.quiz : null;
+  const quizPackage = loadState.status === "ready" ? loadState.quizPackage : null;
+  const session = loadState.status === "ready" ? loadState.session : null;
+  const quiz = quizPackage?.quiz ?? null;
   const attempt = loadState.status === "ready" ? loadState.attempt : null;
   const questions = useMemo(() => (quiz ? getAllQuestions(quiz) : []), [quiz]);
   const currentQuestion = questions[currentIndex];
@@ -105,6 +163,8 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
   const activeQuiz = quiz;
   const activeAttempt = attempt;
+  const activePackage = quizPackage;
+  const activeSession = session;
   const activeQuestion = currentQuestion ?? null;
   const isTrainingMode = activeQuiz?.settings.mode === "training";
   const isTestingMode = activeQuiz?.settings.mode === "testing";
@@ -116,13 +176,70 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   const draftAnswer = activeQuestion ? storedAnswer ?? createInitialAnswer(activeQuestion) : {};
   const currentAnswerComplete = activeQuestion ? isAnswerComplete(activeQuestion, storedAnswer) : false;
   const allQuestionsAnswered = questions.every((question) =>
-    isAnswerComplete(question, activeAttempt?.answers[question.id]?.input ?? drafts[question.id]),
+    isAnswerComplete(question, drafts[question.id]),
   );
   const lastResult = currentRecord?.result ?? null;
   const isFirstQuestion = currentIndex === 0;
   const isLastQuestion = currentIndex === questions.length - 1;
   const testingDurationSeconds = Math.max(activeQuiz?.settings.timeLimitMinutes ?? 0, 0) * 60;
   const deadlineAt = isTestingMode && sessionStartedAt !== null ? sessionStartedAt + testingDurationSeconds * 1000 : null;
+
+  const submitReadyAttempt = useCallback(async (
+    readyPackage: QuizPackage,
+    readySession: LocalQuizAttemptSession,
+    currentAttempt: Attempt | null,
+  ) => {
+    const submittedAt = new Date().toISOString();
+    const answers = buildNormalizedAnswers(questions, drafts);
+    const submittingSession = await localQuizAttemptStore.markSubmitting({
+      ...readySession,
+      answers,
+    });
+
+    setLoadState({
+      status: "ready",
+      attempt: currentAttempt ?? createEmptyAttempt(readyPackage, readySession.attemptId),
+      quizPackage: readyPackage,
+      restored: false,
+      session: submittingSession,
+    });
+
+    const payload = buildClientSubmitPayload({
+      answers,
+      attemptId: readySession.attemptId,
+      clientEvents: submittingSession.clientEvents,
+      quizPackage: readyPackage,
+      startedAt: readySession.startedAt,
+      submittedAt,
+    });
+
+    const nextAttempt = await submitFinalAttempt({
+      attemptId: readySession.attemptId,
+      idempotencyKey: readySession.submitIdempotencyKey,
+      payload,
+      quiz: readyPackage.quiz,
+      quizPackage: readyPackage,
+    });
+    const submittedSession = await localQuizAttemptStore.markSubmitted(
+      {
+        ...submittingSession,
+        answers,
+      },
+      submittedAt,
+    );
+
+    setDrafts(answers);
+    setSubmitError(null);
+    setLoadState({
+      status: "ready",
+      attempt: nextAttempt,
+      quizPackage: readyPackage,
+      restored: false,
+      session: submittedSession,
+    });
+    setReviewingSubmittedAttempt(false);
+    setCurrentIndex(0);
+  }, [drafts, questions]);
 
   useEffect(() => {
     if (!started || !isTestingMode || attemptCompleted || sessionStartedAt !== null) {
@@ -153,28 +270,32 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   }, [started, isTestingMode, attemptCompleted, deadlineAt]);
 
   useEffect(() => {
-    if (!started || !isTestingMode || attemptCompleted || remainingSeconds !== 0 || submitting || !activeQuiz || !activeAttempt) {
+    if (!started || !isTestingMode || attemptCompleted || remainingSeconds !== 0 || submitting || !activePackage || !activeSession) {
       return;
     }
 
     void (async () => {
       setSubmitting(true);
       try {
-        const answerMap = Object.fromEntries(
-          questions.map((question) => [
-            question.id,
-            normalizeAnswerForSubmission(question, activeAttempt.answers[question.id]?.input ?? drafts[question.id] ?? {}),
-          ]),
+        await submitReadyAttempt(activePackage, activeSession, activeAttempt);
+      } catch (error) {
+        const failedSession = await localQuizAttemptStore.markSubmitFailed(
+          activeSession,
+          error instanceof Error ? error.message : "Submit failed.",
         );
-        const nextAttempt = await submitAttempt(activeAttempt.id, activeQuiz, answerMap);
-        setLoadState({ status: "ready", quiz: activeQuiz, attempt: nextAttempt });
-        setReviewingSubmittedAttempt(true);
-        setCurrentIndex(0);
+        setSubmitError(error instanceof Error ? error.message : "Submit failed. Please retry.");
+        setLoadState({
+          status: "ready",
+          attempt: activeAttempt ?? createEmptyAttempt(activePackage, activeSession.attemptId),
+          quizPackage: activePackage,
+          restored: false,
+          session: failedSession,
+        });
       } finally {
         setSubmitting(false);
       }
     })();
-  }, [started, isTestingMode, attemptCompleted, remainingSeconds, submitting, questions, activeAttempt, activeQuiz, drafts]);
+  }, [started, isTestingMode, attemptCompleted, remainingSeconds, submitting, activePackage, activeSession, activeAttempt, submitReadyAttempt]);
 
   if (loadState.status === "loading") {
     return (
@@ -184,18 +305,30 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
     );
   }
 
-  if (loadState.status === "error" || !activeQuiz || !activeAttempt || !activeQuestion) {
+  if (loadState.status === "error" || !activeQuiz || !activeAttempt || !activePackage || !activeSession || !activeQuestion) {
     return (
-      <div className="rounded-3xl border border-red-100 bg-white p-8 text-red-600 shadow-[var(--erg-shadow)]">
-        {loadState.status === "error" ? loadState.message : "Quiz unavailable."}
+      <div className="grid gap-4 rounded-3xl border border-red-100 bg-white p-8 text-red-600 shadow-[var(--erg-shadow)]">
+        <p>{loadState.status === "error" ? loadState.message : "Quiz unavailable."}</p>
+        <button
+          type="button"
+          className="w-fit rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white"
+          onClick={() => setLoadRequestId((value) => value + 1)}
+        >
+          Retry
+        </button>
       </div>
     );
   }
 
   const readyQuiz: Quiz = activeQuiz;
   const readyAttempt: Attempt = activeAttempt;
+  const readyPackage: QuizPackage = activePackage;
   const readyQuestion: Question = activeQuestion;
+  const readySession: LocalQuizAttemptSession = activeSession;
   const resultDisplay: QuizResultDisplay = { ...defaultResultDisplay, ...(readyQuiz.result ?? {}) };
+  const answeredCount = questions.filter((question) => isAnswerComplete(question, drafts[question.id])).length;
+  const restoredDraft = loadState.status === "ready" && loadState.restored;
+  const submitFailed = readySession.status === "submit_failed";
 
   const playerCardStyle = {
     backgroundColor: "var(--quiz-player-bg)",
@@ -239,46 +372,24 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
       ? "bg-rose-50 text-rose-600 ring-1 ring-rose-200"
       : "bg-slate-100 text-slate-700";
 
-  async function handleRevealAnswer() {
-    if (!currentAnswerComplete || submitted) {
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const normalizedAnswer = normalizeAnswerForSubmission(readyQuestion, draftAnswer);
-      const response = await submitAnswer(readyAttempt.id, readyQuiz, readyQuestion.id, normalizedAnswer);
-      setLoadState({ status: "ready", quiz: readyQuiz, attempt: response.attempt });
-
-      if (!isLastQuestion) {
-        if (autoAdvanceRef.current !== null) {
-          window.clearTimeout(autoAdvanceRef.current);
-        }
-
-        autoAdvanceRef.current = window.setTimeout(() => {
-          setCurrentIndex((value) => Math.min(questions.length - 1, value + 1));
-          autoAdvanceRef.current = null;
-        }, 1600);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function handleFinalizeAttempt() {
     setSubmitDialogMode(null);
     setSubmitting(true);
     try {
-      const answerMap = Object.fromEntries(
-        questions.map((question) => [
-          question.id,
-          normalizeAnswerForSubmission(question, readyAttempt.answers[question.id]?.input ?? drafts[question.id] ?? {}),
-        ]),
+      await submitReadyAttempt(readyPackage, readySession, readyAttempt);
+    } catch (error) {
+      const failedSession = await localQuizAttemptStore.markSubmitFailed(
+        readySession,
+        error instanceof Error ? error.message : "Submit failed.",
       );
-      const nextAttempt = await submitAttempt(readyAttempt.id, readyQuiz, answerMap);
-      setLoadState({ status: "ready", quiz: readyQuiz, attempt: nextAttempt });
-      setReviewingSubmittedAttempt(true);
-      setCurrentIndex(0);
+      setSubmitError(error instanceof Error ? error.message : "Submit failed. Please retry.");
+      setLoadState({
+        status: "ready",
+        attempt: readyAttempt,
+        quizPackage: readyPackage,
+        restored: false,
+        session: failedSession,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -294,17 +405,40 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
   }
 
   function handleDraftChange(next: AnswerPayload) {
-    setDrafts((current) => {
-      const previous = current[readyQuestion.id];
-      if (areAnswerPayloadsEqual(previous, next)) {
-        return current;
-      }
+    const previous = drafts[readyQuestion.id];
+    if (areAnswerPayloadsEqual(previous, next)) {
+      return;
+    }
 
-      return {
-        ...current,
+    const now = new Date().toISOString();
+    const nextSession: LocalQuizAttemptSession = {
+      ...readySession,
+      answers: {
+        ...readySession.answers,
         [readyQuestion.id]: next,
-      };
+      },
+      clientEvents: [
+        ...readySession.clientEvents,
+        {
+          type: "answer_changed",
+          createdAt: now,
+          questionId: readyQuestion.id,
+        },
+      ],
+      status: readySession.status === "submit_failed" ? "in_progress" : readySession.status,
+      updatedAt: now,
+    };
+
+    setDrafts(nextSession.answers);
+    setSubmitError(null);
+    setLoadState({
+      status: "ready",
+      attempt: readyAttempt,
+      quizPackage: readyPackage,
+      restored: false,
+      session: nextSession,
     });
+    void localQuizAttemptStore.saveSession(nextSession);
   }
 
   function handleJumpToQuestion(index: number) {
@@ -371,7 +505,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
               {filteredQuestions.map((question) => {
                 const index = questions.findIndex((item) => item.id === question.id);
                 const active = started && currentIndex === index;
-                const answered = isAnswerComplete(question, readyAttempt.answers[question.id]?.input ?? drafts[question.id]);
+                const answered = isAnswerComplete(question, drafts[question.id]);
 
                 return (
                   <button
@@ -444,13 +578,18 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                 <p className="text-2xl font-extrabold sm:text-3xl" style={{ color: "var(--quiz-option-text)" }}>
                   Bấm &quot;Bắt đầu&quot; để bắt đầu làm bài.
                 </p>
+                {restoredDraft ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                    Local draft restored: {answeredCount}/{questions.length} answered. Continue to keep working from this device.
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap gap-3 pt-2">
                   <span className="inline-flex items-center rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.12em]" style={modeBadgeStyle}>
                     {isTrainingMode ? "Chế độ luyện tập" : "Chế độ kiểm tra"}
                   </span>
                   {isTrainingMode ? (
                     <span className="inline-flex items-center rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-slate-600 shadow-[0_10px_24px_rgba(26,44,64,0.08)]">
-                      Xem đáp án từng câu và tự động sang câu tiếp theo
+                      Work locally, then submit once at the end
                     </span>
                   ) : (
                     <span className="inline-flex items-center rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-slate-600 shadow-[0_10px_24px_rgba(26,44,64,0.08)]">
@@ -484,7 +623,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
           <div className="flex min-h-14 items-center justify-between gap-3 px-3 pt-4">
             <span className="text-sm font-bold tracking-[0.02em] text-slate-500">
-              {isTrainingMode ? "Luyện tập: xem đáp án từng câu" : "Kiểm tra: nộp bài ở cuối cùng"}
+              {isTrainingMode ? "Practice: answers stay local until final submit" : "Kiểm tra: nộp bài ở cuối cùng"}
             </span>
             <div className="ml-auto flex gap-2">
               <button
@@ -498,7 +637,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                   }
                 }}
               >
-                BẮT ĐẦU
+                {restoredDraft ? "CONTINUE DRAFT" : "BẮT ĐẦU"}
               </button>
             </div>
           </div>
@@ -522,7 +661,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
             <span>{`Câu ${currentIndex + 1} / ${questions.length}`}</span>
             <span className="hidden text-slate-300 sm:inline">|</span>
             <span className="text-xs font-bold uppercase tracking-[0.08em] text-slate-400">
-              {allQuestionsAnswered ? "Đã hoàn tất" : `${questions.filter((question) => isAnswerComplete(question, readyAttempt.answers[question.id]?.input ?? drafts[question.id])).length}/${questions.length} đã trả lời`}
+              {allQuestionsAnswered ? "Đã hoàn tất" : `${answeredCount}/${questions.length} đã trả lời`}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -575,9 +714,9 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
 
                 {submitted && readyQuestion.kind === "hotspot" ? <AnswerKeyCard question={readyQuestion} /> : null}
 
-                {isTrainingMode && submitted && !isLastQuestion ? (
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-bold text-slate-500 shadow-[0_8px_20px_rgba(26,44,64,0.08)]">
-                    Đang chuyển sang câu tiếp theo...
+                {submitError ? (
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 shadow-[0_8px_20px_rgba(26,44,64,0.08)]">
+                    {submitError}
                   </div>
                 ) : null}
 
@@ -595,34 +734,17 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
               {isTrainingMode ? "Học theo từng câu" : "Chế độ kiểm tra"}
             </span>
             <span className="text-sm font-bold tracking-[0.02em] text-slate-600">
-              {isTrainingMode
-                ? "Nhấn Đáp án để xem kết quả và hệ thống tự động sang câu tiếp theo."
-                : reviewingAttempt
+              {reviewingAttempt
                   ? "Đang xem lại kết quả. Màu xanh là đáp án đúng, màu đỏ/cam là câu trả lời cần sửa."
+                  : submitFailed
+                    ? "Submit failed. Your answers are still saved on this device. Retry with the same request key."
                   : allQuestionsAnswered
                   ? "Tất cả câu hỏi đã có câu trả lời. Bạn có thể nộp bài."
                   : "Dùng Quay lại / Tiếp theo để rà soát bài trước khi nộp."}
             </span>
           </div>
 
-          {isTrainingMode ? (
-            <div className="ml-auto flex items-center gap-2">
-              {submitted ? (
-                <span className="rounded-full bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-600">
-                  Đã mở đáp án
-                </span>
-              ) : null}
-              <button
-                className={navButtonClass}
-                style={accentButtonStyle}
-                type="button"
-                disabled={!currentAnswerComplete || submitted || submitting}
-                onClick={() => void handleRevealAnswer()}
-              >
-                {submitting ? "ĐANG XEM..." : isLastQuestion && submitted ? "HOÀN TẤT" : "ĐÁP ÁN"}
-              </button>
-            </div>
-          ) : attemptCompleted && !reviewingSubmittedAttempt ? (
+          {attemptCompleted && !reviewingSubmittedAttempt ? (
             <div className="ml-auto flex flex-wrap gap-2">
               {resultDisplay.showReviewButton ? (
                 <button className={navButtonClass} style={accentButtonStyle} type="button" onClick={handleReviewQuiz}>
@@ -650,7 +772,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
               >
                 TIẾP THEO
               </button>
-              {allQuestionsAnswered && !attemptCompleted ? (
+              {(allQuestionsAnswered || submitFailed) && !attemptCompleted ? (
                 <button
                   className={navButtonClass}
                   style={accentButtonStyle}
@@ -658,7 +780,7 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
                   disabled={submitting}
                   onClick={handleRequestSubmit}
                 >
-                  {submitting ? "ĐANG NỘP..." : "NỘP BÀI"}
+                  {submitting ? "ĐANG NỘP..." : submitFailed ? "RETRY SUBMIT" : "NỘP BÀI"}
                 </button>
               ) : null}
             </div>
@@ -678,6 +800,38 @@ export function PlayerShell({ quizId = "avs-demo" }: { quizId?: string }) {
         />
       ) : null}
     </QuizThemeSurface>
+  );
+}
+
+async function createFreshLocalSession(assignmentId: string, quizPackage: QuizPackage) {
+  const localAttemptId = createRuntimeKey("attempt");
+  const startKey = createRuntimeKey("start");
+  const submitKey = createRuntimeKey("submit");
+  const startedAttempt = await startAttempt({
+    assignmentId,
+    idempotencyKey: startKey,
+    localAttemptId,
+    packageHash: quizPackage.contentHash,
+    packageId: quizPackage.id,
+    quizId: quizPackage.quizId,
+  });
+
+  return localQuizAttemptStore.createSession({
+    assignmentId,
+    attemptId: startedAttempt.attemptId,
+    packageHash: quizPackage.contentHash,
+    quizId: quizPackage.quizId,
+    quizVersion: quizPackage.quizVersion,
+    submitIdempotencyKey: submitKey,
+  });
+}
+
+function buildNormalizedAnswers(questions: Question[], drafts: Record<string, AnswerPayload>) {
+  return Object.fromEntries(
+    questions.map((question) => [
+      question.id,
+      normalizeAnswerForSubmission(question, drafts[question.id] ?? {}),
+    ]),
   );
 }
 

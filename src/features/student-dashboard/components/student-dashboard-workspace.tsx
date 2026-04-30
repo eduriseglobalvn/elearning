@@ -331,7 +331,7 @@ export function StudentDashboardWorkspace() {
         </section>
 
         <div className="mx-auto w-full max-w-[1480px] px-3 py-4">
-          <PlayerShell quizId={currentAssignment.quizId} />
+          <PlayerShell assignmentId={currentAssignment.id} quizId={currentAssignment.quizId} />
         </div>
       </main>
     );

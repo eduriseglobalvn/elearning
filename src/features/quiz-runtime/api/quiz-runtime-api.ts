@@ -1,5 +1,5 @@
 import { createAttemptSession, createQuizPackage, gradeAttemptLocally } from "@/lib/assessment-engine";
-import { apiRequest, hasApiBase } from "@/lib/api-client";
+import { getApiBase } from "@/lib/platform";
 import { getAllQuestions } from "@/lib/quiz";
 import { sampleQuiz } from "@/lib/sample-quiz";
 import type { Attempt, Quiz, QuizPackage } from "@/lib/types";
@@ -30,23 +30,23 @@ type BackendSubmitAttemptResponse =
     };
 
 export async function getQuizPackage(quizId: string): Promise<QuizPackage> {
-  if (!hasApiBase()) {
+  if (!hasRuntimeApiBase()) {
     return createQuizPackage(sampleQuiz, {
       gradingMode: "client-first",
       source: "local",
     });
   }
 
-  const backendPackage = await apiRequest<BackendQuizPackage>(`/api/lms/quizzes/${quizId}/package`);
+  const backendPackage = await runtimeApiRequest<BackendQuizPackage>(`/api/lms/quizzes/${quizId}/package`);
   return normalizeQuizPackage(backendPackage);
 }
 
 export async function startAttempt(input: StartAttemptInput): Promise<StartAttemptResult> {
-  if (!hasApiBase()) {
+  if (!hasRuntimeApiBase()) {
     return { attemptId: input.localAttemptId };
   }
 
-  const response = await apiRequest<BackendStartAttemptResponse>("/api/lms/attempts", {
+  const response = await runtimeApiRequest<BackendStartAttemptResponse>("/api/lms/attempts", {
     method: "POST",
     headers: {
       "X-Idempotency-Key": input.idempotencyKey,
@@ -65,11 +65,11 @@ export async function startAttempt(input: StartAttemptInput): Promise<StartAttem
 }
 
 export async function submitFinalAttempt(input: SubmitAttemptInput): Promise<Attempt> {
-  if (!hasApiBase()) {
+  if (!hasRuntimeApiBase()) {
     return gradeFinalAttemptLocally(input.quizPackage, input.attemptId, input.payload.answers);
   }
 
-  const response = await apiRequest<BackendSubmitAttemptResponse>(
+  const response = await runtimeApiRequest<BackendSubmitAttemptResponse>(
     `/api/lms/attempts/${input.attemptId}/submit`,
     {
       method: "POST",
@@ -208,4 +208,86 @@ function isAttempt(value: unknown): value is Attempt {
 
 export function countAnsweredQuestions(quiz: Quiz, answers: FinalSubmitPayload["answers"]) {
   return getAllQuestions(quiz).filter((question) => Boolean(answers[question.id])).length;
+}
+
+type ApiErrorBody = {
+  code?: string;
+  message?: string;
+};
+
+type ApiEnvelope<T> = {
+  data?: T;
+  error?: ApiErrorBody;
+  message?: string;
+  success?: boolean;
+};
+
+function hasRuntimeApiBase() {
+  return Boolean(getApiBase());
+}
+
+async function runtimeApiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const apiBase = getApiBase();
+  if (!apiBase) {
+    throw new Error("API base URL is not configured.");
+  }
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers,
+    cache: "no-store",
+  });
+  const body = await readJson<ApiEnvelope<T> | T>(response);
+  const errorBody = getErrorBody(body);
+
+  if (!response.ok || errorBody) {
+    throw new Error(errorBody?.message ?? getEnvelopeMessage(body) ?? `Request failed: ${response.status}`);
+  }
+
+  if (isApiEnvelope<T>(body) && "data" in body) {
+    return body.data as T;
+  }
+
+  return body as T;
+}
+
+async function readJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
+}
+
+function isApiEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
+  return Boolean(value && typeof value === "object" && ("data" in value || "error" in value || "success" in value));
+}
+
+function getErrorBody(value: unknown) {
+  if (!isApiEnvelope<unknown>(value)) {
+    return null;
+  }
+
+  if (value.error) {
+    return value.error;
+  }
+
+  if (value.success === false) {
+    return {
+      code: "API_ERROR",
+      message: value.message,
+    };
+  }
+
+  return null;
+}
+
+function getEnvelopeMessage(value: unknown) {
+  return isApiEnvelope<unknown>(value) ? value.message : undefined;
 }

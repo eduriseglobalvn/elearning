@@ -28,6 +28,68 @@ const NotFoundPage = lazy(() =>
     default: module.NotFoundPage,
   })),
 );
+const HocLieuLayout = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuLayout,
+  })),
+);
+const HocLieuHomePage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuHomePage,
+  })),
+);
+const HocLieuProgramsPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuProgramsPage,
+  })),
+);
+const HocLieuProgramDetailPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuProgramDetailPage,
+  })),
+);
+const HocLieuLibraryPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuLibraryPage,
+  })),
+);
+const HocLieuCommunityPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuCommunityPage,
+  })),
+);
+const HocLieuPortfolioPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuPortfolioPage,
+  })),
+);
+const HocLieuQuizzesPage = lazy(() =>
+  import("@/features/hoclieu").then((module) => ({
+    default: module.HocLieuQuizzesPage,
+  })),
+);
+
+function isHocLieuPortalHost() {
+  if (typeof window === "undefined") return false;
+
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname.startsWith("hoclieu.");
+}
+
+function HocLieuRouteGroup({ includeIndex = false }: { includeIndex?: boolean } = {}) {
+  return (
+    <Route element={<HocLieuLayout />}>
+      {includeIndex ? <Route index element={<HocLieuHomePage />} /> : null}
+      <Route path="hoclieu" element={<HocLieuHomePage />} />
+      <Route path="chuong-trinh" element={<HocLieuProgramsPage />} />
+      <Route path="chuong-trinh/:slug" element={<HocLieuProgramDetailPage />} />
+      <Route path="kho-hoc-lieu" element={<HocLieuLibraryPage />} />
+      <Route path="cong-dong" element={<HocLieuCommunityPage />} />
+      <Route path="portfolio" element={<HocLieuPortfolioPage />} />
+      <Route path="quizzes" element={<HocLieuQuizzesPage />} />
+    </Route>
+  );
+}
 
 function RouteFallback() {
   return (
@@ -40,14 +102,23 @@ function RouteFallback() {
 }
 
 export function AppRoutes() {
+  const isHocLieuPortal = isHocLieuPortalHost();
+
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route element={<RootLayout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/student" element={<StudentPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/question-types" element={<QuestionTypeDemoPage />} />
+          {isHocLieuPortal ? (
+            <>{HocLieuRouteGroup({ includeIndex: true })}</>
+          ) : (
+            <>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/student" element={<StudentPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/question-types" element={<QuestionTypeDemoPage />} />
+              {HocLieuRouteGroup()}
+            </>
+          )}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
